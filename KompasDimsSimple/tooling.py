@@ -66,6 +66,18 @@ def column_ids(stamp):
     return ids
 
 
+MISSING_2000=('Графы 2000 нет в оформлении листа %d (%s, стиль %s): КОМПАС хранит текст, '
+              'но не выводит его на лист. Нужны номера граф строк ведомости этого оформления.')
+
+
+def invisible_text(stamp,cid,snapshot):
+    """Text stored under an ID that the layout does not contain is never drawn.
+
+    GetNextColumnId lists only the layout's own filled cells; a filled ID absent
+    from that list (seen for 2000 on MK VO styles 200/24) is invisible."""
+    return any(clean(line['text']) for line in snapshot) and cid not in column_ids(stamp)
+
+
 def optional_lines(stamp,cid):
     try:return text_lines(stamp,cid)
     except Exception:return []
@@ -197,6 +209,8 @@ def read(path,sources,targets):
         if not desc[index][2].startswith('МК ВО'):raise ValueError('Лист %d не распознан как МК ВО. Сохраните оформление ТП и перечитайте файл.'%(index+1))
         sh=X.sheet_at(doc.LayoutSheets,index)
         old=snapshot_text(sh.Stamp.Text(2000),module)
+        if invisible_text(sh.Stamp,2000,old):
+            raise ValueError(MISSING_2000%(index+1,desc[index][2],desc[index][1])+' Запись не начата.')
         pages.append(dict(index=index,signature=C.signature(sh),old=old,
                           height=140.25 if 'продолжение' in desc[index][2] else 132.0))
     # Empty continuation pages use a filled reference anywhere in this TP.
@@ -205,6 +219,7 @@ def read(path,sources,targets):
         if not name.startswith('МК ВО'):continue
         sh=X.sheet_at(doc.LayoutSheets,index)
         old=snapshot_text(sh.Stamp.Text(2000),module)
+        if invisible_text(sh.Stamp,2000,old):continue  # not a visible sample
         used=False
         for line_index,line in enumerate(old):
             name=clean(line['text']).rstrip(':').casefold()
@@ -347,12 +362,18 @@ def diagnose(path,indices):
             C.require_active(app,path)
             sh=X.sheet_at(doc.LayoutSheets,index)
             api7={cid:snapshot_text(sh.Stamp.Text(cid),module) for cid in column_ids(sh.Stamp)}
+            listed=2000 in api7
             api7.setdefault(2000,snapshot_text(sh.Stamp.Text(2000),module))
             native=native_columns(mod5,k5,doc5,index)
             record=dict(sheet=index+1,name=desc[index][2],signature=C.signature(sh),crossed=sh.Stamp.Crossed,
                         api7=api7,api5=native)
             report['sheets'].append(record);J.event('Диагностика листа',**record)
             rows=[dict(text=s) for line in api7[2000] for s in line['text'].replace('\r\n','\n').replace('\r','\n').rstrip('\n').split('\n')]
+            if not listed and any(clean(r['text']) for r in rows):
+                record['invisible_2000']=True
+                summaries.append('Лист %d · %s: в графе 2000 хранится %d строк, но такой графы нет в оформлении — на листе они не видны. Графы оформления: %s.'
+                                 %(index+1,desc[index][2],sum(bool(clean(r['text'])) for r in rows),', '.join(str(c) for c in api7 if c!=2000)))
+                continue
             try:verify_text(native.get(2000,[]),rows,index,'API5 / API7')
             except RuntimeError as exc:
                 record['mismatch']=str(exc);J.failure('Два API читают разное содержимое графы',exc,sheet=index+1,column=2000)
@@ -567,6 +588,9 @@ def write(path,data,entries):
             sh=X.sheet_at(doc.LayoutSheets,page['index'])
             verified=snapshot_text(sh.Stamp.Text(2000),module)
             record['actual']=verified
+            # Both APIs read back text even for an ID missing from the layout.
+            if invisible_text(sh.Stamp,2000,verified):
+                raise RuntimeError(MISSING_2000%(page['index']+1,'МК ВО',page['signature']['style']))
             save_report()
             J.event('Обратное чтение API7 после перерисовки',sheet=page['index']+1,column=2000,actual=verified)
             verify_written(verified,rows,data,page['index'])

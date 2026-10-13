@@ -57,11 +57,12 @@ class Text:
 
 
 class Stamp:
-    def __init__(self,fields):self.fields={int(cid):Text(rows) for cid,rows in fields.items()};self.Crossed=False
+    def __init__(self,fields):self.fields={int(cid):Text(rows) for cid,rows in fields.items()};self.Crossed=False;self.hidden=set()
     def Update(self):self.Crossed=False;return True
     def Text(self,cid):return self.fields.get(cid,Text([]))
     def GetNextColumnId(self,previous):
-        return next((cid for cid in sorted(self.fields) if cid>previous and self.fields[cid].Count),-1)
+        # hidden: IDs that the sheet layout does not contain (not enumerated).
+        return next((cid for cid in sorted(self.fields) if cid>previous and self.fields[cid].Count and cid not in self.hidden),-1)
 
 
 class NativeStamp:
@@ -255,6 +256,27 @@ class RoundTrip(unittest.TestCase):
             self.assertEqual(len(report['sheets']),2)
             self.assertIn('2000',report['sheets'][0]['api5'])
             self.assertIn('2110',report['sheets'][0]['api5'])
+
+    def test_filled_cell_missing_from_layout_is_rejected_before_write(self):
+        # Журнал 13.10: МК ВО (стили 200/24) не содержит графы 2000.
+        env=Env();env.pages[2].Stamp.hidden.add(2000)
+        with tempfile.TemporaryDirectory() as folder,env.patch(folder):
+            with self.assertRaisesRegex(ValueError,'Графы 2000 нет'):V.read('x',None,[2])
+            self.assertEqual(env.writes,[])
+
+    def test_write_to_cell_missing_from_layout_is_not_success(self):
+        env=Env();env.pages[3].Stamp.fields[2000]=Text([]);env.pages[3].Stamp.hidden.add(2000)
+        with tempfile.TemporaryDirectory() as folder,env.patch(folder):
+            data=V.read('x',None,[3])
+            with self.assertRaisesRegex(RuntimeError,'Графы 2000 нет[\\s\\S]*восстановлены и проверены|восстановлены и проверены[\\s\\S]*Графы 2000 нет'):
+                V.write('x',data,[dict(text='Микрометр новый',group=V.GROUPS[0])])
+            self.assertEqual(env.writes,[3,3])
+
+    def test_diagnostics_reports_invisible_cell(self):
+        env=Env();env.pages[2].Stamp.hidden.add(2000)
+        with tempfile.TemporaryDirectory() as folder,env.patch(folder):
+            result=V.diagnose('x',[2])
+            self.assertIn('не видны',result);self.assertEqual(env.writes,[])
 
     def test_pending_stamp_is_updated_and_rechecked(self):
         env=Env();env.pages[2].Stamp.Crossed=True
