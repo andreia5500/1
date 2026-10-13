@@ -183,9 +183,11 @@ class ToolingWindow(tk.Toplevel):
         self.app.run(lambda:V.write(self.path,data,entries),self.done,'Заполняю выбранные листы ведомости…',self.failed)
         self.after(100,self.unlock)
 
-    def done(self,count):
+    def done(self,result):
+        count,note=result if isinstance(result,tuple) else (result,'')
         self.data=None;self.send.configure(state='disabled')
         self.status.set('Записано и проверено обратным чтением: %d позиций. Окно ТП обновлено. Проверьте вид листов и сохраните ТП (Ctrl+S).'%count)
+        if note:messagebox.showwarning('Проверьте листы',note,parent=self)
 
     def diagnose(self):
         if self.app.busy:return

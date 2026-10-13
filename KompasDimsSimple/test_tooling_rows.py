@@ -14,9 +14,14 @@ class Sheet:
         self.LayoutStyleNumber=style;self.LayoutLibraryFileName='C:\\TEHNOLOGI.LYT'
         self.cells=dict(cells);self.layout=set(layout)
         self.Stamp=NS(Crossed=False,GetNextColumnId=self.next_id)
+    order=None;restart_after_zero=False
     def next_id(self,previous):
-        # Like KOMPAS: only filled cells that exist in the layout.
-        return next((c for c in sorted(self.cells) if c>previous and c in self.layout and self.cells[c][0].strip()),-1)
+        # Like KOMPAS: only filled cells that exist in the layout, in layout order.
+        filled=[c for c in (self.order or sorted(self.cells)) if c in self.layout and self.cells.get(c,('',))[0].strip()]
+        if previous==0 and self.restart_after_zero:previous=-1
+        if previous==-1:return filled[0] if filled else -1
+        i=filled.index(previous)+1 if previous in filled else len(filled)
+        return filled[i] if i<len(filled) else -1
 
 
 class Env:
@@ -72,6 +77,27 @@ class Rows(unittest.TestCase):
                 V.write('x',data,data['entries'])
         self.assertEqual(env.sheets[2].cells[3456][0],'А1')
         self.assertEqual(env.sheets[2].cells.get(3459,('',))[0].strip(),'')
+
+    def zero_cell_env(self,restart):
+        # Лист 4: стиль 24 из C:\Новая папка\TEHNOLOGI.LYT, в оформлении есть графа 0.
+        env=Env();sheet=env.sheets[2]
+        sheet.cells[7]=('3',FONT);sheet.cells[0]=('2',FONT);sheet.layout|={7,0}
+        sheet.order=[7,0]+list(range(3472,3455,-1));sheet.restart_after_zero=restart
+        return env
+
+    def test_cell_zero_does_not_end_layout_list(self):
+        env=self.zero_cell_env(False)
+        self.assertIn(3456,V.column_ids(env.sheets[2].Stamp))
+        with tempfile.TemporaryDirectory() as folder,env.patch(folder):
+            data=V.read('x',[20],[2]);self.assertEqual(V.write('x',data,data['entries']),2)
+
+    def test_restarted_list_after_zero_warns_instead_of_false_failure(self):
+        env=self.zero_cell_env(True)
+        self.assertEqual(V.column_scan(env.sheets[2].Stamp),([7,0],False))
+        with tempfile.TemporaryDirectory() as folder,env.patch(folder):
+            data=V.read('x',[20],[2]);count,note=V.write('x',data,data['entries'])
+        self.assertEqual(count,2);self.assertIn('3',note)
+        self.assertEqual(env.sheets[2].cells[3456][0],'Мерительная')
 
     def test_changed_rows_block_write(self):
         env=Env()

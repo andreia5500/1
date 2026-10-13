@@ -56,14 +56,26 @@ def text_lines(stamp,cid):
     return [str(t.TextLine(i).Str or '') for i in range(int(t.Count))]
 
 
-def column_ids(stamp):
-    ids=[];seen=set();previous=-1
+def column_scan(stamp):
+    """Filled layout cells and whether the list is known to be complete.
+
+    -1 ends the list. Some layouts (style 24 from C:\\Новая папка\\TEHNOLOGI.LYT)
+    contain a cell numbered 0; it used to be taken for the end, which hid
+    cells 3456…3472 on such sheets. The scan continues past 0; if KOMPAS then
+    restarts the list, it is reported as possibly incomplete."""
+    ids=[];seen=set();previous=-1;complete=True
     for _ in range(10000):
         cid=int(stamp.GetNextColumnId(previous))
-        if cid<=0 or cid in seen:break
+        if cid<0:break
+        if cid in seen:
+            complete=complete and 0 not in seen;break
         seen.add(cid);ids.append(cid);previous=cid
     else:raise ValueError('Не удалось завершить перечисление граф штампа.')
-    return ids
+    return ids,complete
+
+
+def column_ids(stamp):
+    return column_scan(stamp)[0]
 
 
 # MK VO body rows are separate stamp cells, one per row. Determined from a TP
@@ -313,15 +325,20 @@ def write_rows(path,data,entries):
         backup.write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     save_report()
     J.event('План записи МК ВО по строкам',path=path,targets=[p['index']+1 for p in data['pages']],planned=planned,report=str(backup))
-    touched=[]
+    touched=[];unchecked=[]
     def check(sh,index,cid,text,bold):
         actual=X.read_cell(sh.Stamp,cid,module)
         report['readback'].append(dict(sheet=index+1,column=cid,actual=actual))
         J.event('Обратное чтение строки ведомости',sheet=index+1,column=cid,actual=actual)
         if actual['text'].strip()!=X.safe(text).strip():
             raise RuntimeError('Лист %d, графа %d: запись не подтверждена: ожидалось %r, прочитано %r.'%(index+1,cid,X.safe(text),actual['text']))
-        if clean(text) and cid not in column_ids(sh.Stamp):
-            raise RuntimeError('Лист %d: графы %d нет в оформлении листа — текст не будет виден.'%(index+1,cid))
+        if clean(text):
+            ids,complete=column_scan(sh.Stamp)
+            if cid not in ids:
+                if complete:raise RuntimeError('Лист %d: графы %d нет в оформлении листа — текст не будет виден.'%(index+1,cid))
+                if index+1 not in unchecked:
+                    unchecked.append(index+1)
+                    J.event('Перечень граф оформления неполный',sheet=index+1,column=cid,ids=ids)
         if clean(text) and actual['font'] and bold is not None and bool(actual['font']['Bold'])!=bold:
             raise RuntimeError('Лист %d, графа %d: жирность шрифта не подтверждена.'%(index+1,cid))
     try:
@@ -370,8 +387,10 @@ def write_rows(path,data,entries):
         raise RuntimeError('Запись остановлена. %s\nОтчёт: %s\n%s%s'%(status,backup,exc,
                            '\n\nВосстановление:\n'+'\n'.join(errors) if errors else '')) from exc
     count=len({key(e['text']) for e in entries})
-    J.event('МК ВО подтверждена после записи',path=path,positions=count,report=str(backup),
+    J.event('МК ВО подтверждена после записи',path=path,positions=count,report=str(backup),unchecked_layout=unchecked,
             verification='построчно, API7 + перечень граф оформления; внешний вид автоматически не подтверждён')
+    if unchecked:
+        return count,'КОМПАС не выдал полный перечень граф оформления листов %s — проверьте на этих листах, что строки видны.'%', '.join(map(str,unchecked))
     return count
 
 
