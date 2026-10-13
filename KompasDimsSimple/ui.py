@@ -1,8 +1,13 @@
 """Оформление «Технолог 2.0»: единая тема, шапки окон, чертёжный фон, значки.
 
+Палитра — тёмный ин­ковый графит-навy + сдержанное золото как фирменный
+акцент (логотип, рамка шапки, активный пункт навигации, штамп чертежа).
+Акцент используется скупо — это держит интерфейс спокойным, но даёт тот
+самый «дорогой» блеск там, где он уместен.
+
 Все окна строятся одинаково: шапка (название + путь к файлу), рабочая
 область по шагам 1-2-3, внизу слева «Журнал», справа «Закрыть» и одна
-главная синяя кнопка действия.
+главная кнопка действия.
 """
 import math
 import tkinter as tk
@@ -10,29 +15,42 @@ from tkinter import ttk, font
 
 APP_NAME = 'Технолог 2.0'
 
-# Палитра: инженерная «синька» + светлая рабочая область.
-BG = '#EEF2F6'          # фон рабочих окон
+# ---------------------------------------------------------------- палитра
+# Нейтральные тона — тёплый камень, не холодная синь: спокойнее для глаза
+# при длительной работе и выглядит дороже, чем типовой «офисный» серо-синий.
+BG = '#F3F1EC'          # фон рабочих окон — тёплый светлый камень
 PAPER = '#FFFFFF'
-TEXT = '#17212E'
-MUTED = '#5E6D80'
-LINE = '#D3DCE6'
-BLUE = '#1565C0'        # главное действие
-BLUE_HOVER = '#1E74D6'
-BLUE_PRESS = '#0D4A94'
-NAVY = '#0C2340'        # шапки и боковая панель
-NAVY_2 = '#13325A'
-NAVY_TEXT = '#E8F0FA'
-NAVY_MUTED = '#9FB4CF'
+TEXT = '#1B2430'        # графит с синим подтоном
+MUTED = '#6E6A61'
+LINE = '#E1DCD1'
+BLUE = '#2C4F8C'        # главное действие — глубокий сапфир (не ярко-синий)
+BLUE_HOVER = '#3A5FA0'
+BLUE_PRESS = '#1E3A6B'
+NAVY = '#0B1420'        # шапки и боковая панель — почти чёрный индиго
+NAVY_2 = '#152233'      # вторичные тёмные панели / активный пункт навигации
+NAVY_TEXT = '#ECEEF3'
+NAVY_MUTED = '#8C94A6'
 OK = '#2E7D32'
-WARN = '#A15C00'
-ERROR = '#C62828'
-# Чертёжный лист («синька»)
-PRINT_BG = '#0F355E'
-PRINT_MINOR = '#16416F'
-PRINT_MAJOR = '#215283'
-PRINT_LINE = '#8DB7E6'
-PRINT_THIN = '#5E8DC2'
-PRINT_TEXT = '#D6E6FA'
+WARN = '#9C5B18'
+ERROR = '#B23A3A'
+
+# Золото — фирменный акцент. Использовать только там, где он подчёркивает
+# бренд (логотип, разделительная линия шапки, активная навигация, штамп),
+# а не как обычный интерфейсный цвет.
+GOLD = '#C6A15B'
+GOLD_HOVER = '#D4B36F'
+GOLD_PRESS = '#A8863F'
+GOLD_SOFT = '#4A3E26'   # мягкая золотая тень/подсветка на тёмном фоне
+
+# Чертёжный лист («синька») — та же тёмная индиго-палитра, что и у шапок,
+# чтобы главный экран и диалоги читались как единая дорогая система.
+PRINT_BG = NAVY
+PRINT_MINOR = '#16222E'
+PRINT_MAJOR = '#213244'
+PRINT_LINE = '#9FB8D9'
+PRINT_THIN = '#5C7693'
+PRINT_TEXT = '#E7EEF7'
+SHADOW = '#05090E'      # мягкая тень под карточками на тёмном фоне
 
 UI_FONT = 'Segoe UI'
 MONO_FONT = 'Consolas'
@@ -45,11 +63,11 @@ def theme(root):
         font.nametofont(name).configure(family=UI_FONT, size=10)
     root.configure(background=BG)
     for key, value in (('*background', BG), ('*foreground', TEXT), ('*Listbox.background', PAPER),
-                       ('*Listbox.selectBackground', '#D6E6FB'), ('*Listbox.selectForeground', TEXT),
+                       ('*Listbox.selectBackground', '#E4DCC4'), ('*Listbox.selectForeground', TEXT),
                        ('*Listbox.highlightThickness', 1), ('*Listbox.highlightBackground', LINE),
-                       ('*Listbox.highlightColor', BLUE), ('*Listbox.relief', 'flat'),
+                       ('*Listbox.highlightColor', GOLD), ('*Listbox.relief', 'flat'),
                        ('*Text.background', PAPER), ('*Text.highlightThickness', 1),
-                       ('*Text.highlightBackground', LINE), ('*Text.highlightColor', BLUE), ('*Text.relief', 'flat'),
+                       ('*Text.highlightBackground', LINE), ('*Text.highlightColor', GOLD), ('*Text.relief', 'flat'),
                        ('*TCombobox*Listbox.background', PAPER), ('*TCombobox*Listbox.font', (UI_FONT, 10))):
         root.option_add(key, value)
     style.configure('.', background=BG, foreground=TEXT, font=(UI_FONT, 10))
@@ -71,55 +89,60 @@ def theme(root):
     style.configure('BannerMuted.TLabel', background=NAVY, foreground=NAVY_MUTED, font=(UI_FONT, 9))
     style.configure('TLabelframe', background=BG, bordercolor=LINE, relief='solid', borderwidth=1)
     style.configure('TLabelframe.Label', background=BG, font=(UI_FONT, 10, 'bold'), foreground=NAVY)
-    # кнопки: обычная (обводка), главная (синяя), в шапке (на тёмном)
-    style.configure('TButton', padding=(14, 7), background=PAPER, foreground=TEXT, bordercolor='#BFCCDA',
-                    lightcolor=PAPER, darkcolor=PAPER, relief='flat', focuscolor=BLUE, font=(UI_FONT, 10))
-    style.map('TButton', background=[('disabled', '#EEF1F5'), ('pressed', '#DCE8F8'), ('active', '#EEF4FD')],
-              foreground=[('disabled', '#9AA6B4')],
-              bordercolor=[('disabled', '#DDE3EA'), ('focus', BLUE), ('active', '#8FB0DA')])
+    # кнопки: обычная (обводка), главная (сапфир), в шапке (на тёмном)
+    style.configure('TButton', padding=(14, 7), background=PAPER, foreground=TEXT, bordercolor='#D4CDBD',
+                    lightcolor=PAPER, darkcolor=PAPER, relief='flat', focuscolor=GOLD, font=(UI_FONT, 10))
+    style.map('TButton', background=[('disabled', '#F1EFEA'), ('pressed', '#E9E3D3'), ('active', '#F6F1E6')],
+              foreground=[('disabled', '#A6A096')],
+              bordercolor=[('disabled', '#E6E1D5'), ('focus', GOLD), ('active', '#C9B98F')])
     style.configure('Accent.TButton', background=BLUE, foreground=PAPER, bordercolor=BLUE,
                     lightcolor=BLUE, darkcolor=BLUE, font=(UI_FONT, 10, 'bold'), padding=(18, 8))
-    style.map('Accent.TButton', background=[('disabled', '#DCE3EC'), ('pressed', BLUE_PRESS), ('active', BLUE_HOVER)],
+    style.map('Accent.TButton', background=[('disabled', '#C9D1DE'), ('pressed', BLUE_PRESS), ('active', BLUE_HOVER)],
               foreground=[('disabled', '#8C99AA'), ('!disabled', PAPER)],
-              bordercolor=[('disabled', '#DCE3EC'), ('!disabled', BLUE)],
+              bordercolor=[('disabled', '#C9D1DE'), ('!disabled', BLUE)],
               lightcolor=[('active', BLUE_HOVER)], darkcolor=[('active', BLUE_HOVER)])
-    style.configure('Banner.TButton', background=NAVY_2, foreground=NAVY_TEXT, bordercolor='#2F5584',
+    # фирменная «золотая» кнопка — для редких акцентных действий
+    style.configure('Gold.TButton', background=GOLD, foreground=NAVY, bordercolor=GOLD,
+                    lightcolor=GOLD, darkcolor=GOLD, font=(UI_FONT, 10, 'bold'), padding=(18, 8))
+    style.map('Gold.TButton', background=[('disabled', '#E7DCC0'), ('pressed', GOLD_PRESS), ('active', GOLD_HOVER)],
+              foreground=[('disabled', '#A6A096')], bordercolor=[('!disabled', GOLD)])
+    style.configure('Banner.TButton', background=NAVY_2, foreground=NAVY_TEXT, bordercolor='#2C3C52',
                     lightcolor=NAVY_2, darkcolor=NAVY_2, padding=(12, 6))
-    style.map('Banner.TButton', background=[('active', '#1D4472'), ('pressed', '#0A1C33')],
-              foreground=[('disabled', '#6F86A3')], bordercolor=[('active', '#5D86B8')])
+    style.map('Banner.TButton', background=[('active', '#1C2C42'), ('pressed', '#070C13')],
+              foreground=[('disabled', '#5C6576')], bordercolor=[('active', GOLD)])
     # боковая навигация
     style.configure('Nav.TButton', background=NAVY, foreground=NAVY_TEXT, bordercolor=NAVY, lightcolor=NAVY,
-                    darkcolor=NAVY, anchor='w', padding=(18, 9), font=(UI_FONT, 10), relief='flat')
-    style.map('Nav.TButton', background=[('active', '#17385F'), ('pressed', '#0A1C33')],
-              foreground=[('disabled', '#6F86A3')], bordercolor=[('active', '#17385F')])
-    style.configure('NavActive.TButton', background='#1B3F6B', foreground=PAPER, bordercolor='#1B3F6B',
-                    lightcolor='#1B3F6B', darkcolor='#1B3F6B', anchor='w', padding=(18, 9), font=(UI_FONT, 10, 'bold'))
-    style.map('NavActive.TButton', background=[('active', '#22507F')])
+                    darkcolor=NAVY, anchor='w', padding=(16, 9), font=(UI_FONT, 10), relief='flat')
+    style.map('Nav.TButton', background=[('active', '#172333'), ('pressed', '#070C13')],
+              foreground=[('disabled', '#5C6576'), ('active', GOLD)], bordercolor=[('active', '#172333')])
+    style.configure('NavActive.TButton', background=NAVY_2, foreground=GOLD, bordercolor=NAVY_2,
+                    lightcolor=NAVY_2, darkcolor=NAVY_2, anchor='w', padding=(16, 9), font=(UI_FONT, 10, 'bold'))
+    style.map('NavActive.TButton', background=[('active', NAVY_2)], foreground=[('active', GOLD)])
     # поля
-    style.configure('TEntry', fieldbackground=PAPER, padding=6, bordercolor='#BFCCDA', lightcolor=PAPER)
-    style.map('TEntry', bordercolor=[('focus', BLUE)])
-    style.configure('TCombobox', fieldbackground=PAPER, background=PAPER, padding=5, bordercolor='#BFCCDA',
+    style.configure('TEntry', fieldbackground=PAPER, padding=6, bordercolor='#D4CDBD', lightcolor=PAPER)
+    style.map('TEntry', bordercolor=[('focus', GOLD)])
+    style.configure('TCombobox', fieldbackground=PAPER, background=PAPER, padding=5, bordercolor='#D4CDBD',
                     arrowcolor=MUTED, arrowsize=14)
-    style.map('TCombobox', fieldbackground=[('readonly', PAPER), ('disabled', '#EEF1F5')],
-              foreground=[('disabled', '#9AA6B4'), ('readonly', TEXT)], selectbackground=[('readonly', PAPER)],
-              selectforeground=[('readonly', TEXT)], bordercolor=[('focus', BLUE)])
+    style.map('TCombobox', fieldbackground=[('readonly', PAPER), ('disabled', '#F1EFEA')],
+              foreground=[('disabled', '#A6A096'), ('readonly', TEXT)], selectbackground=[('readonly', PAPER)],
+              selectforeground=[('readonly', TEXT)], bordercolor=[('focus', GOLD)])
     style.configure('TCheckbutton', background=BG)
     style.configure('Paper.TCheckbutton', background=PAPER)
     style.configure('TNotebook', background=BG, bordercolor=LINE, tabmargins=(0, 4, 0, 0))
-    style.configure('TNotebook.Tab', padding=(16, 7), background='#E2E8EF', foreground=MUTED, bordercolor=LINE,
+    style.configure('TNotebook.Tab', padding=(16, 7), background='#E8E3D7', foreground=MUTED, bordercolor=LINE,
                     font=(UI_FONT, 10))
     style.map('TNotebook.Tab', background=[('selected', PAPER)], foreground=[('selected', NAVY)],
               font=[('selected', (UI_FONT, 10, 'bold'))])
     style.configure('Treeview', background=PAPER, fieldbackground=PAPER, foreground=TEXT,
                     rowheight=max(28, font.nametofont('TkDefaultFont').metrics('linespace') + 10),
                     bordercolor=LINE, borderwidth=1, font=(UI_FONT, 10))
-    style.configure('Treeview.Heading', background='#E4EBF3', foreground=NAVY,
+    style.configure('Treeview.Heading', background='#EAE5D9', foreground=NAVY,
                     font=(UI_FONT, 10, 'bold'), padding=(8, 8), relief='flat')
-    style.map('Treeview', background=[('selected', '#D6E6FB')], foreground=[('selected', '#0D3A73')])
-    style.map('Treeview.Heading', background=[('active', '#D8E2EE')])
-    style.configure('TScrollbar', background='#C7D2DF', troughcolor=BG, arrowcolor=MUTED,
+    style.map('Treeview', background=[('selected', '#E4DCC4')], foreground=[('selected', '#3A2F10')])
+    style.map('Treeview.Heading', background=[('active', '#E2DCC9')])
+    style.configure('TScrollbar', background='#D6CFBD', troughcolor=BG, arrowcolor=MUTED,
                     bordercolor=BG, lightcolor=BG, darkcolor=BG, arrowsize=13)
-    style.configure('TProgressbar', background=BLUE, troughcolor='#DCE4EE', bordercolor=BG, thickness=6)
+    style.configure('TProgressbar', background=GOLD, troughcolor='#E6E1D3', bordercolor=BG, thickness=6)
     style.configure('TPanedwindow', background=BG)
     return style
 
@@ -135,13 +158,14 @@ def window(win, title, width, height, min_width=850, min_height=550):
 
 
 def header(parent, title, subtitle=None, icon=None):
-    """Тёмная шапка окна: значок, название, подпись. Возвращает правую панель для кнопок."""
+    """Тёмная шапка окна: золотой значок, название, подпись, тонкая золотая
+    линия внизу — фирменный штрих, повторяющийся в каждом окне программы."""
     band = tk.Frame(parent, background=NAVY, height=74)
     band.pack(fill='x')
     band.pack_propagate(False)
     mark = tk.Canvas(band, width=46, height=46, background=NAVY, highlightthickness=0)
     mark.pack(side='left', padx=(18, 12))
-    draw_icon(mark, icon or 'logo', 23, 23, 40, PRINT_LINE, NAVY)
+    draw_icon(mark, icon or 'logo', 23, 23, 40, GOLD, NAVY)
     text = tk.Frame(band, background=NAVY)
     text.pack(side='left', fill='y', pady=(12, 10))
     ttk.Label(text, text=title, style='Banner.TLabel').pack(anchor='w')
@@ -150,7 +174,7 @@ def header(parent, title, subtitle=None, icon=None):
         label.pack(anchor='w')
     right = ttk.Frame(band, style='Banner.TFrame')
     right.pack(side='right', padx=16)
-    tk.Frame(parent, background=BLUE, height=3).pack(fill='x')
+    tk.Frame(parent, background=GOLD, height=2).pack(fill='x')
     return right
 
 
@@ -187,7 +211,7 @@ def table_scroll(table):
     table.grid(row=0, column=0, sticky='nsew')
     vertical.grid(row=0, column=1, sticky='ns')
     horizontal.grid(row=1, column=0, sticky='ew')
-    table.tag_configure('stripe', background='#F6F8FB')
+    table.tag_configure('stripe', background='#F8F6F1')
 
 
 def journal_button(parent, owner, style='TButton'):
@@ -218,12 +242,44 @@ def busy(root, yes):
         root._busy_widgets = []
 
 
+# ---------------------------------------------------------------- тон и тень
+
+def _lerp(c1, c2, t):
+    """Линейная интерполяция между двумя цветами '#rrggbb'."""
+    a = [int(c1[i:i + 2], 16) for i in (1, 3, 5)]
+    b = [int(c2[i:i + 2], 16) for i in (1, 3, 5)]
+    return '#%02x%02x%02x' % tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3))
+
+
+def vgradient(canvas, x0, y0, x1, y1, top, bottom, tag, steps=48):
+    """Мягкий вертикальный градиент — используется для «дорогой» подложки
+    шапки главного экрана вместо плоской заливки."""
+    height = max(1, y1 - y0)
+    for i in range(steps):
+        a = y0 + height * i / steps
+        b = y0 + height * (i + 1) / steps
+        canvas.create_rectangle(x0, a, x1, b + 1, outline='', fill=_lerp(top, bottom, i / max(1, steps - 1)), tags=tag)
+
+
+def shadow(canvas, x, y, w, h, tag='shadow', offset=7, blur=3, color=SHADOW):
+    """Мягкая многослойная тень-«подложка» под карточкой (имитация blur)."""
+    for i in range(blur, 0, -1):
+        d = offset + i * 2
+        canvas.create_rectangle(x + d - blur, y + d - blur, x + w + d, y + h + d, outline='',
+                                 fill=color, tags=tag, stipple='gray25' if i > 1 else '')
+
+
 # ---------------------------------------------------------------- чертёжный фон
 
 def blueprint(canvas, width, height):
-    """Синька: сетка 5/25 мм, деталь «вал» с размерами, рамка и штамп."""
+    """Синька: сетка 5/25 мм, деталь «вал» с размерами, рамка и штамп.
+
+    Верхняя треть — мягкий градиент (светлее к центру заголовка) и тонкая
+    золотая линия под заголовком: фирменный, но сдержанный «вау»-штрих.
+    """
     canvas.delete('bp')
     canvas.configure(background=PRINT_BG)
+    vgradient(canvas, 0, 0, width, 210, '#182A3F', PRINT_BG, tag='bp', steps=36)
     for x in range(0, width, 12):
         canvas.create_line(x, 0, x, height, fill=PRINT_MAJOR if x % 60 == 0 else PRINT_MINOR, tags='bp')
     for y in range(0, height, 12):
@@ -231,15 +287,16 @@ def blueprint(canvas, width, height):
     m = 18
     canvas.create_rectangle(m, m, width - m, height - m, outline=PRINT_THIN, width=1, tags='bp')
     canvas.create_rectangle(m + 30, m + 6, width - m - 6, height - m - 6, outline=PRINT_LINE, width=2, tags='bp')
-    # штамп (основная надпись) в правом нижнем углу
+    canvas.create_line(64, 146, min(620, width - 160), 146, fill=GOLD, width=2, tags='bp')
+    # штамп (основная надпись) в правом нижнем углу — золотая рамка-акцент
     sw, sh = min(370, width // 3), 110
     x0, y0 = width - m - 6 - sw, height - m - 6 - sh
-    canvas.create_rectangle(x0, y0, x0 + sw, y0 + sh, outline=PRINT_LINE, width=2, tags='bp')
+    canvas.create_rectangle(x0, y0, x0 + sw, y0 + sh, outline=GOLD, width=2, tags='bp')
     for k in (22, 44, 66, 88):
         canvas.create_line(x0, y0 + k, x0 + sw * 0.42, y0 + k, fill=PRINT_THIN, tags='bp')
-    canvas.create_line(x0 + sw * 0.42, y0, x0 + sw * 0.42, y0 + sh, fill=PRINT_LINE, width=2, tags='bp')
+    canvas.create_line(x0 + sw * 0.42, y0, x0 + sw * 0.42, y0 + sh, fill=GOLD, width=1, tags='bp')
     canvas.create_line(x0 + sw * 0.42, y0 + 44, x0 + sw, y0 + 44, fill=PRINT_LINE, width=2, tags='bp')
-    canvas.create_text(x0 + sw * 0.71, y0 + 22, text=APP_NAME.upper(), fill=PRINT_TEXT, font=(UI_FONT, 13, 'bold'), tags='bp')
+    canvas.create_text(x0 + sw * 0.71, y0 + 22, text=APP_NAME.upper(), fill=GOLD, font=(UI_FONT, 13, 'bold'), tags='bp')
     canvas.create_text(x0 + sw * 0.71, y0 + 76, text='Технологическая\nподготовка производства', fill=PRINT_LINE,
                        font=(UI_FONT, 9), justify='center', tags='bp')
     for i, t in enumerate(('Разраб.', 'Пров.', 'Т.контр.', 'Н.контр.', 'Утв.')):

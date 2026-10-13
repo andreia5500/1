@@ -41,6 +41,7 @@ class App(tk.Tk):
         self.events = queue.Queue()
         self.status = tk.StringVar(value='Выберите модуль. Порядок работы — сверху вниз по левой панели.')
         self.nav_buttons={}
+        self.nav_strips={}
         self.build_sidebar()
         content=ttk.Frame(self);content.pack(side='left',fill='both',expand=True)
         footer=ttk.Frame(content,padding=(16,7,16,8));footer.pack(side='bottom',fill='x')
@@ -60,11 +61,11 @@ class App(tk.Tk):
         side=tk.Frame(self,background=U.NAVY,width=250);side.pack(side='left',fill='y');side.pack_propagate(False)
         brand=tk.Frame(side,background=U.NAVY);brand.pack(fill='x',padx=16,pady=(18,14))
         logo=tk.Canvas(brand,width=44,height=44,background=U.NAVY,highlightthickness=0);logo.pack(side='left')
-        U.draw_icon(logo,'logo',22,22,40,U.PRINT_LINE,U.NAVY)
+        U.draw_icon(logo,'logo',22,22,40,U.GOLD,U.NAVY)
         names=tk.Frame(brand,background=U.NAVY);names.pack(side='left',padx=10)
         tk.Label(names,text='Технолог',background=U.NAVY,foreground=U.NAVY_TEXT,font=(U.UI_FONT,16,'bold')).pack(anchor='w')
-        tk.Label(names,text='версия 2.0',background=U.NAVY,foreground=U.NAVY_MUTED,font=(U.UI_FONT,9)).pack(anchor='w')
-        tk.Frame(side,background=U.NAVY_2,height=1).pack(fill='x',padx=12,pady=(0,8))
+        tk.Label(names,text='версия 2.0',background=U.NAVY,foreground=U.GOLD,font=(U.UI_FONT,9)).pack(anchor='w')
+        tk.Frame(side,background=U.GOLD,height=1).pack(fill='x',padx=12,pady=(0,8))
         self.nav_item(side,'home','Главная',self.go_home)
         stage=None
         for i,(key,icon,title,text,group) in enumerate(self.MODULES,1):
@@ -77,8 +78,11 @@ class App(tk.Tk):
         tk.Label(bottom,text='Технолог 2.0 · сборка '+J.VERSION,background=U.NAVY,foreground=U.NAVY_MUTED,font=(U.UI_FONT,8)).pack(anchor='w',pady=(8,0))
 
     def nav_item(self,parent,key,text,command):
-        button=ttk.Button(parent,text=text,command=command,style='Nav.TButton')
-        button.pack(fill='x',padx=8,pady=1);self.nav_buttons[key]=button
+        row=tk.Frame(parent,background=U.NAVY);row.pack(fill='x',padx=8,pady=1)
+        strip=tk.Frame(row,background=U.NAVY,width=3);strip.pack(side='left',fill='y')
+        button=ttk.Button(row,text=text,command=command,style='Nav.TButton')
+        button.pack(side='left',fill='x',expand=True)
+        self.nav_buttons[key]=button;self.nav_strips[key]=strip
 
     def show(self,name):
         for key,page in self.pages.items():
@@ -86,6 +90,8 @@ class App(tk.Tk):
             else:page.pack_forget()
         for key,button in self.nav_buttons.items():
             button.configure(style='NavActive.TButton' if key==name else 'Nav.TButton')
+        for key,strip in self.nav_strips.items():
+            strip.configure(background=U.GOLD if key==name else U.NAVY)
         self.page=name
 
     def go_home(self):
@@ -114,15 +120,17 @@ class App(tk.Tk):
             w,h=max(canvas.winfo_width(),900),max(canvas.winfo_height(),560)
             U.blueprint(canvas,w,h)
             canvas.delete('hero')
-            canvas.create_text(64,62,text=U.APP_NAME,anchor='w',fill='#FFFFFF',font=(U.UI_FONT,30,'bold'),tags='hero')
-            canvas.create_text(66,104,text='Технологическая подготовка производства: от чертежа до управляющей программы',
+            canvas.create_text(64,60,text=U.APP_NAME,anchor='w',fill='#FFFFFF',font=(U.UI_FONT,30,'bold'),tags='hero')
+            canvas.create_text(66,102,text='Технологическая подготовка производства: от чертежа до управляющей программы',
                                anchor='w',fill=U.PRINT_TEXT,font=(U.UI_FONT,12),tags='hero')
-            canvas.create_text(66,130,text='Работайте по шагам 1 → 6. Каждый модуль показывает план перед записью и проверяет результат.',
+            canvas.create_text(66,128,text='Работайте по шагам 1 → 6. Каждый модуль показывает план перед записью и проверяет результат.',
                                anchor='w',fill=U.PRINT_LINE,font=(U.UI_FONT,10),tags='hero')
-            cols=3;gap=18;left=60;top=170
+            cols=3;gap=18;left=60;top=176
             card_w=min(330,(w-left*2-gap*(cols-1))//cols);card_h=186
+            canvas.delete('shadow')
             for i,card in enumerate(cards):
                 x=left+(i%cols)*(card_w+gap);y=top+(i//cols)*(card_h+gap)
+                U.shadow(canvas,x,y,card_w,card_h)
                 canvas.coords(card._item,x,y);canvas.itemconfigure(card._item,width=card_w,height=card_h)
                 card._text.configure(wraplength=card_w-36)
             canvas.tag_raise('card')
@@ -130,11 +138,11 @@ class App(tk.Tk):
         return page
 
     def module_card(self,canvas,number,key,icon,title,text,group):
-        card=tk.Frame(canvas,background=U.PAPER,highlightthickness=1,highlightbackground='#3D6798',cursor='hand2')
+        card=tk.Frame(canvas,background=U.PAPER,highlightthickness=1,highlightbackground='#D8D2C2',cursor='hand2')
         card._item=canvas.create_window(0,0,window=card,anchor='nw',tags='card')
         top=tk.Frame(card,background=U.PAPER);top.pack(fill='x',padx=16,pady=(14,6))
-        mark=tk.Canvas(top,width=44,height=44,background='#EAF2FD',highlightthickness=0);mark.pack(side='left')
-        U.draw_icon(mark,icon,22,22,32,U.BLUE,'#EAF2FD')
+        mark=tk.Canvas(top,width=44,height=44,background='#F0EBDD',highlightthickness=0);mark.pack(side='left')
+        U.draw_icon(mark,icon,22,22,32,U.BLUE,'#F0EBDD')
         names=tk.Frame(top,background=U.PAPER);names.pack(side='left',padx=12)
         tk.Label(names,text='ШАГ %d · %s'%(number,group.upper()),background=U.PAPER,foreground=U.MUTED,font=(U.UI_FONT,8,'bold')).pack(anchor='w')
         tk.Label(names,text=title,background=U.PAPER,foreground=U.NAVY,font=(U.UI_FONT,13,'bold')).pack(anchor='w')
@@ -142,7 +150,7 @@ class App(tk.Tk):
         card._text=tk.Label(card,text=text,background=U.PAPER,foreground=U.MUTED,font=(U.UI_FONT,9),justify='left',anchor='nw')
         card._text.pack(fill='both',expand=True,padx=16)
         ttk.Button(bar,text='Открыть',style='Accent.TButton',command=lambda:self.open_module(key)).pack(side='right')
-        def hover(on):card.configure(highlightbackground=U.BLUE if on else '#3D6798',highlightthickness=2 if on else 1)
+        def hover(on):card.configure(highlightbackground=U.GOLD if on else '#D8D2C2',highlightthickness=2 if on else 1)
         for widget in (card,top,names,card._text,mark,bar)+tuple(names.winfo_children()):
             widget.bind('<Button-1>',lambda e:self.open_module(key))
         card.bind('<Enter>',lambda e:hover(True));card.bind('<Leave>',lambda e:hover(False))
