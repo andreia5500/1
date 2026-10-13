@@ -32,12 +32,21 @@ class Sheet:
         return filled[i] if i<len(filled) else -1
 
 
+class Api7Cell(unittest.TestCase):
+    def test_cell_zero_written_through_api7_without_clearing_stamp(self):
+        calls=[];text=NS(Str='')
+        stamp=NS(Text=lambda cid:calls.append(('text',cid)) or text,Update=lambda:calls.append('update') or True)
+        doc=NS(LayoutSheets=None)
+        with patch.object(P.X,'sheet_at',return_value=NS(Stamp=stamp)):P.write_cell(NS(),doc,3,0,'2')
+        self.assertEqual(text.Str,'2');self.assertEqual(calls,[('text',0),'update'])
+
+
 class Write(unittest.TestCase):
     def env(self,layout13=(0,7)):
         sheets={i:Sheet({},(0,1813)) for i in range(15)}
         sheets.update({6:Sheet({0:'2',7:'7'},(0,7)),7:Sheet({7:'8'},layout13),9:Sheet({1813:'5'},(1813,))})
         writes=[]
-        def write_one(doc5,k5,sheet,cid,text,font):writes.append((sheet,cid,text));sheets[sheet].cells[cid]=text
+        def write_cell(module,doc,sheet,cid,text):writes.append((sheet,cid,text));sheets[sheet].cells[cid]=text
         def read_cell(stamp,cid,module):
             sh=next(s for s in sheets.values() if s.Stamp is stamp);t=sh.cells.get(cid,'')
             return dict(id=cid,text=t,font={'Height':3.5} if t else {},count=1)
@@ -45,7 +54,8 @@ class Write(unittest.TestCase):
         doc=NS(LayoutSheets=NS(Count=15))
         st=[patch('sketch.context',return_value=(NS(),NS(),NS(),app,doc,NS())),
             patch.object(P.X,'sheet_at',side_effect=lambda _,i:sheets[i]),
-            patch.object(P.X,'write_one',side_effect=write_one),patch.object(P.X,'read_cell',side_effect=read_cell),
+            patch.object(P,'write_cell',side_effect=write_cell),
+            patch.object(P.X,'write_one',side_effect=AssertionError('ksClearStamp(0) clears the whole stamp')),patch.object(P.X,'read_cell',side_effect=read_cell),
             patch.object(P.V,'refresh_document'),patch.object(P.K,'connect',return_value=(NS(),NS())),
             patch.object(P.X,'open_doc',return_value=doc),patch.object(P.N,'describe',return_value=DESC)]
         return sheets,writes,st

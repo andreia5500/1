@@ -70,14 +70,15 @@ def read(path):
     return dict(path=path, count=int(doc.LayoutSheets.Count), rows=rows)
 
 
-def sample_fonts(rows):
-    """Шрифт уже заполненной графы номера того же оформления."""
-    fonts = {}
-    for row in rows:
-        old = row.get('old')
-        if old and old['text'].strip() and old['font']:
-            fonts.setdefault((row['style'], row['cell']), old['font'])
-    return fonts
+def write_cell(module, doc, index, cid, text):
+    """Номер листа через API7: текст графы + IStamp.Update().
+
+    Не через transfer.write_one: там перед записью стоит ksClearStamp(номер),
+    а ksClearStamp(0) очищает ВЕСЬ штамп, графа же номера на продолжениях
+    МК/МК ВО как раз 0."""
+    stamp = X.sheet_at(doc.LayoutSheets, index).Stamp
+    stamp.Text(cid).Str = text
+    X.check_result(J.call('IStamp.Update', stamp.Update, sheet=index + 1, column=cid), 'обновление штампа листа %d' % (index + 1))
 
 
 def write(path, data):
@@ -90,7 +91,6 @@ def write(path, data):
         sh = X.sheet_at(doc.LayoutSheets, row['index'])
         if X.read_cell(sh.Stamp, row['cell'], module) != row['old']:
             raise ValueError('Лист %d изменился после просмотра. Перечитайте ТП.' % (row['index'] + 1))
-    fonts = sample_fonts(data['rows'])
     backup = X.backup_folder() / ('numbering_' + datetime.now().strftime('%Y%m%d_%H%M%S_%f') + '.json')
     backup.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
     touched = []
@@ -99,9 +99,8 @@ def write(path, data):
         for row in todo:
             V.C.require_active(app, path)
             index, cid, text = row['index'], row['cell'], str(row['page'])
-            font = row['old']['font'] or fonts.get((row['style'], cid), {})
             touched.append(row)
-            X.write_one(doc5, k5, index, cid, text, font)
+            write_cell(module, doc, index, cid, text)
             sh = X.sheet_at(doc.LayoutSheets, index)
             actual = X.read_cell(sh.Stamp, cid, module)
             J.event('Обратное чтение номера листа', sheet=index + 1, column=cid, actual=actual)
@@ -117,7 +116,10 @@ def write(path, data):
         errors = []
         for row in reversed(touched):
             try:
-                X.write_one(doc5, k5, row['index'], row['cell'], row['old']['text'], row['old']['font'])
+                back = X.read_cell(X.sheet_at(doc.LayoutSheets, row['index']).Stamp, row['cell'], module)
+                if back['text'].strip() == row['old']['text'].strip():
+                    continue  # запись не дошла до КОМПАСа - восстанавливать нечего
+                write_cell(module, doc, row['index'], row['cell'], row['old']['text'])
                 back = X.read_cell(X.sheet_at(doc.LayoutSheets, row['index']).Stamp, row['cell'], module)
                 if back['text'].strip() != row['old']['text'].strip():
                     raise RuntimeError('прочитано %r' % back['text'])
