@@ -236,6 +236,18 @@ class ToolingTests(unittest.TestCase):
         heads=[r['text'] for r in V.plan(data,entries)[0] if r['heading']]
         self.assertEqual(heads,['Режущая','Шлифовальная','Слесарная','Мерительная','Приспособления'])
 
+    def test_overflow_message_counts_rows(self):
+        entries=[dict(text='Резец %d'%i,group=V.GROUPS[1]) for i in range(20)]+[dict(text='Очки %d'%i,group=V.GROUPS[2]) for i in range(20)]
+        data=dict(pages=[dict(capacity=17),dict(capacity=17)],limit=85)
+        with self.assertRaisesRegex(ValueError,'нужно 42 строк.*— 34.*8 строк'):V.plan(data,entries)
+        # 15+14 items + 2 headings = 31 rows: fits with the blank separator.
+        planned=V.plan(data,entries[:15]+entries[20:34])
+        self.assertEqual(sum(map(len,planned)),32)
+        # 16+16 items + 2 headings = 34: fits only without the separator.
+        planned=V.plan(data,entries[:16]+entries[20:36])
+        self.assertEqual(sum(map(len,planned)),34)
+        self.assertFalse(any(not r['text'] for rows in planned for r in rows))
+
     def test_ke_wrapped_model_is_one_position(self):
         rows=['Сверло твердосплавное','WPC-UNI.4,5.R.3D.DIN6535. HB TIALN','','Пластина CCMT 060202']
         self.assertEqual(V.joined_instruments(rows),['Сверло твердосплавное WPC-UNI.4,5.R.3D.DIN6535. HB TIALN','Пластина CCMT 060202'])

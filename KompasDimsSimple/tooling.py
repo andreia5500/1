@@ -429,28 +429,43 @@ def plan(data,entries):
             if not k or k in seen:continue
             seen.add(k);values.append(e['text'])
         if values:groups.append((group,values))
-    pages=[[] for _ in data['pages']];pi=0
-    for group,values in groups:
-        rows=[]
-        # Each item starts a new line; long names are wrapped without splitting
-        # native index/special-symbol sequences.
-        for value in values:
-            wrapped=L.wrap(value,data['limit'])
-            if any(L.visual_len(row)>data['limit'] for row in wrapped):
-                raise ValueError('Слишком длинное обозначение без пробелов: '+value+' — добавьте место переноса.')
-            rows.extend(wrapped)
-        if pages[pi] and len(pages[pi])<data['pages'][pi]['capacity']:
-            pages[pi].append(dict(text='',heading=False))
-        need_heading=True
-        for row in rows:
-            required=2 if need_heading else 1
-            if len(pages[pi])+required>data['pages'][pi]['capacity']:
-                pi+=1
-                if pi>=len(pages):raise ValueError('На выбранных листах МК ВО не хватает места. Выберите дополнительные листы ведомости или сократите список.')
-                need_heading=True
-                if data['pages'][pi]['capacity']<2:raise ValueError('На листе нет места для заголовка и инструмента.')
-            if need_heading:pages[pi].append(dict(text=data.get('group_names',{}).get(group,group),heading=True));need_heading=False
-            pages[pi].append(dict(text=row,heading=False))
+    wrapped_groups=[(g,[r for v in values for r in L.wrap(v,data['limit'])]) for g,values in groups]
+    need=sum(1+len(rows) for _,rows in wrapped_groups)+len(groups)-1
+    have=sum(p['capacity'] for p in data['pages'])
+    def overflow():
+        over=max(need-have,1)
+        return ValueError('На выбранных листах МК ВО не хватает места: нужно %d строк (заголовки и пустые строки между '
+                          'группами входят), на %d лист(ах) — %d. Снимите отметки ещё примерно с %d строк или выберите '
+                          'дополнительный лист МК ВО.'%(need,len(data['pages']),have,over))
+    def build(separators):
+        pages=[[] for _ in data['pages']];pi=0
+        for group,values in groups:
+            rows=[]
+            # Each item starts a new line; long names are wrapped without splitting
+            # native index/special-symbol sequences.
+            for value in values:
+                wrapped=L.wrap(value,data['limit'])
+                if any(L.visual_len(row)>data['limit'] for row in wrapped):
+                    raise ValueError('Слишком длинное обозначение без пробелов: '+value+' — добавьте место переноса.')
+                rows.extend(wrapped)
+            if separators and pages[pi] and len(pages[pi])<data['pages'][pi]['capacity']:
+                pages[pi].append(dict(text='',heading=False))
+            need_heading=True
+            for row in rows:
+                required=2 if need_heading else 1
+                if len(pages[pi])+required>data['pages'][pi]['capacity']:
+                    pi+=1
+                    if pi>=len(pages):return None
+                    need_heading=True
+                    if data['pages'][pi]['capacity']<2:raise ValueError('На листе нет места для заголовка и инструмента.')
+                if need_heading:pages[pi].append(dict(text=data.get('group_names',{}).get(group,group),heading=True));need_heading=False
+                pages[pi].append(dict(text=row,heading=False))
+        return pages
+    # Blank rows between groups are dropped only when the list does not fit.
+    pages=build(True) or build(False)
+    if pages is None:
+        need-=len(groups)-1  # separators already dropped
+        raise overflow()
     return pages
 
 
