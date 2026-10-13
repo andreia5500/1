@@ -392,13 +392,17 @@ def native_styles(mod5,k5,array):
         for j in range(int(items.ksGetArrayCount())):
             item=X._text_item_param(k5);item.Init()
             X.check_result(items.ksGetArrayItem(j,item),'чтение компоненты образца')
+            # A special symbol (e.g. Ø = @2~) is a separate non-text component
+            # carrying its number in iSNumb; keep it, or 'Ø11f7' reads '11f7'.
+            snumb=int(X.get_prop(item,'iSNumb',0) or 0)
             if int(item.type)==0:texts.append(str(item.s or ''))
+            elif snumb>0:texts.append('@%d~'%snumb)
             # ksTextItemFont spells its properties as in the type library
             # (bitVector, not bitvector); gen_py lookups are case-sensitive.
             f=item.GetItemFont();g=lambda name:X.get_prop(f,name);bits=int(g('bitvector'))
             font=dict(FontName=str(g('fontName')),Height=float(g('height')),WidthFactor=float(g('ksu')),
                       Color=int(g('color')),Italic=bool(bits&0x40),Bold=bool(bits&0x100),Underline=bool(bits&0x400))
-            components.append(dict(text=str(item.s or ''),type=int(item.type),font=font,flags=bits))
+            components.append(dict(text=str(item.s or ''),type=int(item.type),snumb=snumb,font=font,flags=bits))
         result.append(dict(text=''.join(texts),style=int(line.style),items=components))
     return result
 
@@ -472,6 +476,20 @@ def verify_written(verified,rows,data,index):
         template=data['heading'] if row['heading'] else data['body']
         if not same_props(line['props'],template['props']) or any(not same_props(run['font'],template['font']) for run in line['runs'] if run['text'].strip() and run['type']==0):
             raise RuntimeError('Форматирование ведомости не совпало с образцом: лист %d, строка %d.'%(index+1,n+1))
+
+
+def first_difference(actual,expected):
+    """Human-readable first mismatch between two native/API7 line lists."""
+    for n in range(max(len(actual),len(expected))):
+        a=actual[n] if n<len(actual) else None;e=expected[n] if n<len(expected) else None
+        if a!=e:
+            if a is None or e is None:return 'строка %d: %s'%(n+1,'отсутствует' if a is None else 'лишняя')
+            fields=[k for k in sorted(set(a)|set(e)) if a.get(k)!=e.get(k)]
+            return 'строка %d (%r), отличается: %s; было %s, стало %s'%(
+                n+1,e.get('text',''),', '.join(fields),
+                json.dumps({k:e.get(k) for k in fields},ensure_ascii=False)[:400],
+                json.dumps({k:a.get(k) for k in fields},ensure_ascii=False)[:400])
+    return 'отличий не найдено'
 
 
 def same_props(a,b):
@@ -569,11 +587,14 @@ def write(path,data,entries):
                 C.require_active(app,path)
                 native_write(doc5,page['index'],original)
                 native_restored=native_styles(mod5,k5,native_read(mod5,doc5,page['index']))
-                if native_restored!=original_text:raise RuntimeError('API5: исходная графа не восстановилась полностью.')
+                J.event('Обратное чтение API5 после восстановления',sheet=page['index']+1,column=2000,actual=native_restored)
+                if native_restored!=original_text:
+                    raise RuntimeError('API5: исходная графа не восстановилась полностью: '+first_difference(native_restored,original_text))
                 refresh_stamp(module,doc,page['index'])
                 sh=X.sheet_at(doc.LayoutSheets,page['index'])
-                if snapshot_text(sh.Stamp.Text(2000),module)!=page['old']:
-                    raise RuntimeError('Исходная графа не восстановилась полностью.')
+                restored_api7=snapshot_text(sh.Stamp.Text(2000),module)
+                if restored_api7!=page['old']:
+                    raise RuntimeError('API7: исходная графа не восстановилась полностью: '+first_difference(restored_api7,page['old']))
                 now={cid:snapshot_text(sh.Stamp.Text(cid),module) for cid in column_ids(sh.Stamp) if cid!=2000}
                 if now!=other:raise RuntimeError('Прочие графы изменились.')
                 J.event('Исходная графа восстановлена через оба API',sheet=page['index']+1,column=2000,actual=native_restored)
@@ -589,8 +610,11 @@ def write(path,data,entries):
             try:
                 actual=native_styles(mod5,k5,native_read(mod5,doc5,page['index']))
                 stamp=X.sheet_at(doc.LayoutSheets,page['index']).Stamp
-                if actual!=original_text or snapshot_text(stamp.Text(2000),module)!=page['old']:
-                    raise RuntimeError('Итоговое восстановление графы не совпало с оригиналом.')
+                if actual!=original_text:
+                    raise RuntimeError('Итоговое восстановление (API5) не совпало: '+first_difference(actual,original_text))
+                final_api7=snapshot_text(stamp.Text(2000),module)
+                if final_api7!=page['old']:
+                    raise RuntimeError('Итоговое восстановление (API7) не совпало: '+first_difference(final_api7,page['old']))
             except Exception as err:
                 restored=False;restore_errors.append('Лист %d: %s'%(page['index']+1,err))
                 J.failure('Итоговая проверка восстановления не прошла',err,sheet=page['index']+1)
@@ -607,7 +631,9 @@ def write(path,data,entries):
         try:save_report()
         except OSError:pass  # Keep the original write/readback error visible.
         status='Исходные графы ведомости восстановлены и проверены.' if restored else 'Восстановление не подтверждено. Закройте ТП без сохранения.'
-        raise RuntimeError('Запись остановлена. %s\nОтчёт: %s\n%s'%(status,backup,exc)) from exc
+        details='\n'.join(restore_errors)
+        raise RuntimeError('Запись остановлена. %s\nОтчёт: %s\n%s%s'%(status,backup,exc,
+                           '\n\nВосстановление:\n'+details if details else '')) from exc
     J.event('МК ВО подтверждена после записи',path=path,positions=len({key(e['text']) for e in entries}),report=str(backup),
             verification='API5 + API7, с перерисовкой; внешний вид автоматически не подтверждён')
     return len({key(e['text']) for e in entries})

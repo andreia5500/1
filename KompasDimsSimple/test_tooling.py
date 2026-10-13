@@ -182,6 +182,30 @@ class ToolingTests(unittest.TestCase):
         self.assertIs(V.native_stamp(NS(GetStampEx=lambda n:stamp),3),stamp)
         with self.assertRaisesRegex(RuntimeError,'другого листа'):V.native_stamp(NS(GetStampEx=lambda n:stamp),2)
 
+    def test_native_special_symbol_is_read_back(self):
+        # Отчёт 13.10: КОМПАС вернул 'Калибр-скоба ', спецзнак (type 17, iSNumb 2), '11f7'.
+        class Font:
+            _prop_map_get_={'bitVector':0,'fontName':0,'height':0,'ksu':0,'color':0}
+            def __init__(self):self.bitVector=0x1000;self.fontName='GOST type A';self.height=3.5;self.ksu=1.;self.color=0
+        class Item:
+            _prop_map_get_={'s':0,'type':0,'iSNumb':0}
+            def Init(self):self.s='';self.type=0;self.iSNumb=0
+            def GetItemFont(self):return Font()
+        parts=[('Калибр-скоба ',0,0),('',17,2),('11f7',0,0)]
+        items=NS(ksGetArrayCount=lambda:3,ksGetArrayItem=lambda j,it:it.__dict__.update(zip(('s','type','iSNumb'),parts[j])) or 1)
+        line=NS(Init=lambda:None,style=0,GetTextItemArr=lambda:items)
+        lines=NS(ksGetArrayCount=lambda:1,ksGetArrayItem=lambda i,target:1)
+        mod5=NS(ksTextLineParam=lambda _:line,ksDynamicArray=lambda a:a)
+        with patch('tooling.X._text_item_param',side_effect=lambda k:Item()):
+            rows=V.native_styles(mod5,NS(GetParamStruct=lambda n:None),lines)
+        self.assertEqual(rows[0]['text'],'Калибр-скоба @2~11f7')
+        V.verify_text(rows,[dict(text='Калибр-скоба Ø11f7')],2,'API5')
+
+    def test_first_difference_names_field(self):
+        a=[dict(text='x',style=0)];b=[dict(text='x',style=5)]
+        self.assertIn('style',V.first_difference(a,b))
+        self.assertIn('отсутствует',V.first_difference([],b))
+
     def test_ke_wrapped_model_is_one_position(self):
         rows=['Сверло твердосплавное','WPC-UNI.4,5.R.3D.DIN6535. HB TIALN','','Пластина CCMT 060202']
         self.assertEqual(V.joined_instruments(rows),['Сверло твердосплавное WPC-UNI.4,5.R.3D.DIN6535. HB TIALN','Пластина CCMT 060202'])
