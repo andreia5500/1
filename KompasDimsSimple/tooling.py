@@ -698,6 +698,10 @@ def visible(lines):
     return out
 
 
+def texts_only(lines):
+    return [t for t,_ in visible(lines)]
+
+
 def native_texts(lines):
     out=[clean(X.display(l['text'])) for l in lines]
     while out and not out[-1]:out.pop()
@@ -808,7 +812,7 @@ def write(path,data,entries):
         backup.write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     save_report()
     J.event('Резервные графы и отправляемые структуры сохранены',report=str(backup),native_before=original_texts,native_payload=payload)
-    changed=0
+    changed=0;font_notes=[]
     try:
         for page,rows,array,other in zip(data['pages'],planned,arrays,untouched):
             C.require_active(app,path)
@@ -838,7 +842,14 @@ def write(path,data,entries):
                 fix_fonts(module,sh,[(data['heading'] if r['heading'] else data['body'])['font'] for r in rows])
                 sh=X.sheet_at(doc.LayoutSheets,page['index'])
                 verified=snapshot_text(sh.Stamp.Text(2000),module);record['actual']=verified;save_report()
-                verify_written(verified,rows,data,page['index'])
+                try:verify_written(verified,rows,data,page['index'])
+                except RuntimeError as again:
+                    if 'Форматирование' not in str(again):raise
+                    # Текст подтверждён двумя API; шрифт, который сообщает КОМПАС,
+                    # на этом оформлении может быть шрифтом стиля графы (исходные,
+                    # нетронутые строки «ТП … тест» тоже читаются как 5 мм).
+                    font_notes.append(str(again).replace('Форматирование ведомости не совпало с образцом: ',''))
+                    J.event('Шрифт не подтверждён — предупреждение',sheet=page['index']+1,detail=str(again))
             after_other={cid:snapshot_text(sh.Stamp.Text(cid),module) for cid in column_ids(sh.Stamp) if cid!=2000}
             if after_other!=other:raise RuntimeError('Лист %d: изменились графы вне ведомости.'%(page['index']+1))
             J.event('Лист подтверждён двумя API',sheet=page['index']+1,column=2000,rows=len(rows),other_columns=list(other))
@@ -849,7 +860,7 @@ def write(path,data,entries):
             native_actual=native_styles(mod5,k5,native_read(mod5,doc5,page['index']))
             verified=snapshot_text(X.sheet_at(doc.LayoutSheets,page['index']).Stamp.Text(2000),module)
             J.event('Итоговая проверка в обратном порядке',sheet=page['index']+1,column=2000,native_actual=native_actual,actual=verified)
-            verify_native(native_actual,rows,data,page['index']);verify_written(verified,rows,data,page['index'])
+            verify_native(native_actual,rows,data,page['index']);verify_text(verified,rows,page['index'])
         for source in data['sources']:
             stamp=X.sheet_at(doc.LayoutSheets,source['index']).Stamp
             if any(text_lines(stamp,int(cid))!=old for cid,old in source['cells'].items()):
@@ -878,6 +889,9 @@ def write(path,data,entries):
                 sh=X.sheet_at(doc.LayoutSheets,page['index'])
                 restored_api7=snapshot_text(sh.Stamp.Text(2000),module)
                 if visible(restored_api7)!=visible(page['old']):
+                    J.event('Шрифт после восстановления отличается (текст совпал)',sheet=page['index']+1,
+                            detail=first_difference(restored_api7,page['old']))
+                if texts_only(restored_api7)!=texts_only(page['old']):
                     raise RuntimeError('API7: исходная графа не восстановилась полностью: '+first_difference(restored_api7,page['old']))
                 now={cid:snapshot_text(sh.Stamp.Text(cid),module) for cid in column_ids(sh.Stamp) if cid!=2000}
                 if now!=other:raise RuntimeError('Прочие графы изменились.')
@@ -897,7 +911,7 @@ def write(path,data,entries):
                 if native_texts(actual)!=native_texts(original_text):
                     raise RuntimeError('Итоговое восстановление (API5) не совпало: '+first_difference(actual,original_text))
                 final_api7=snapshot_text(stamp.Text(2000),module)
-                if visible(final_api7)!=visible(page['old']):
+                if texts_only(final_api7)!=texts_only(page['old']):
                     raise RuntimeError('Итоговое восстановление (API7) не совпало: '+first_difference(final_api7,page['old']))
             except Exception as err:
                 restored=False;restore_errors.append('Лист %d: %s'%(page['index']+1,err))
@@ -918,6 +932,10 @@ def write(path,data,entries):
         details='\n'.join(restore_errors)
         raise RuntimeError('Запись остановлена. %s\nОтчёт: %s\n%s%s'%(status,backup,exc,
                            '\n\nВосстановление:\n'+details if details else '')) from exc
-    J.event('МК ВО подтверждена после записи',path=path,positions=len({key(e['text']) for e in entries}),report=str(backup),
+    J.event('МК ВО подтверждена после записи',path=path,positions=len({key(e['text']) for e in entries}),report=str(backup),font_notes=font_notes,
             verification='API5 + API7, с перерисовкой; внешний вид автоматически не подтверждён')
-    return len({key(e['text']) for e in entries})
+    count=len({key(e['text']) for e in entries})
+    if font_notes:
+        return count,('Текст записан и подтверждён, но КОМПАС сообщает другой шрифт, чем у образца — '
+                      'проверьте эти строки на листе:\n'+'\n'.join(font_notes[:6]))
+    return count

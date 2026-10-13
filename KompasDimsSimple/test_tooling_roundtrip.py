@@ -293,6 +293,21 @@ class RoundTrip(unittest.TestCase):
             for row in env.pages[3].Stamp.Text(2000).rows:
                 if row.Str.strip():self.assertEqual(row.item.Height,3.5)
 
+    def test_font_reported_by_layout_is_a_warning_not_a_rollback(self):
+        # 2.0.3 на «ТП … тест»: высота 5 мм не меняется и через API7
+        env=Env();env.layout_height={3:5.0}
+        class Sticky:
+            def __init__(self,item):object.__setattr__(self,'item',item)
+            def __getattr__(self,k):return getattr(self.item,k)
+            def __setattr__(self,k,v):
+                if k!='Height':setattr(self.item,k,v)
+        env.mod7.ITextFont=lambda item:Sticky(item)
+        with tempfile.TemporaryDirectory() as folder,env.patch(folder):
+            data=V.read('x',None,[2,3])
+            count,note=V.write('x',data,data['entries'])
+        self.assertIn('Лист 4',note.replace('лист 4','Лист 4'));self.assertIn('Height 5.0',note)
+        self.assertTrue(any(r.Str.strip() for r in env.pages[3].Stamp.Text(2000).rows))
+
     def test_restore_returns_fonts_after_layout_override(self):
         env=Env();env.layout_height={2:5.0,3:5.0};env.fail_sheet=3
         with tempfile.TemporaryDirectory() as folder,env.patch(folder):
