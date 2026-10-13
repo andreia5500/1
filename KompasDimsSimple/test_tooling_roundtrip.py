@@ -45,8 +45,11 @@ class Line:
         self.Str=text;self.Count=1;self.__dict__.update(PROPS)
         heading=V.clean(text).casefold() in V.HEADINGS
         self._native_style=style if style is not None else 9013 if heading else 8997
-        self.font=dict(font or dict(FONT,Bold=heading))
-    def TextItem(self,_):return NS(Str=self.Str,ItemType=0,**self.font)
+        self.item=NS(ItemType=0,**dict(font or dict(FONT,Bold=heading)))
+        self.native=None  # шрифт, записанный через API5 (если оформление листа его перекрыло)
+    @property
+    def font(self):return {k:getattr(self.item,k) for k in FONT}
+    def TextItem(self,_):self.item.Str=self.Str;return self.item  # ITextFont(item) is the same object
 
 
 class Text:
@@ -82,7 +85,7 @@ class NativeStamp:
         if self.cid==2000:source=self.env.native_override.get(self.index,source)
         for row in source.rows:
             line=NativeLine();line.Init();line.style=row._native_style
-            item=Item();item.Init();item.s=row.Str+'\n';V.X.set_font(item,row.font)
+            item=Item();item.Init();item.s=row.Str+'\n';V.X.set_font(item,row.native or row.font)
             line.items.ksAddArrayItem(-1,item);arr.ksAddArrayItem(-1,line)
         return arr,self.cid
     def ksSetStampColumnText(self,cid,array):
@@ -108,6 +111,8 @@ class NativeStamp:
                 text.rows[-1].Str+=value
             else:text.rows.append(Line(value,native.style,font))
         self.env.pages[self.index].Stamp.fields[cid]=text
+        if self.env.layout_height.get(self.index):  # стиль графы листа перекрывает высоту
+            for row in text.rows:row.native=row.font;row.item.Height=self.env.layout_height[self.index]
         if self.env.stale_native_sheet==self.index and not self.env.failed:
             self.env.failed=True;self.env.native_override[self.index]=before
         else:self.env.native_override.pop(self.index,None)
@@ -120,7 +125,7 @@ class NativeStamp:
 class Env:
     def __init__(self):
         data=json.loads((Path(__file__).parent/'tp_fixture.json').read_text(encoding='utf-8'))
-        self.records=data['sheets'];self.pages=[];self.writes=[];self.fail_sheet=None;self.failed=False
+        self.records=data['sheets'];self.pages=[];self.writes=[];self.fail_sheet=None;self.failed=False;self.layout_height={}
         self.stale_native_sheet=None;self.native_override={};self.redraws=0;self.redraw_result=True
         for row in self.records:
             fields=dict(row['fields']);fields['1']=['Золотник'];fields['2110']=['Р1Е60.100.01']
@@ -279,6 +284,21 @@ class RoundTrip(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder,env.patch(folder):
             result=V.diagnose('x',[2])
             self.assertIn('не видны',result);self.assertEqual(env.writes,[])
+
+    def test_layout_overriding_font_height_is_fixed_through_api7(self):
+        # «ТП … тест», лист 4: «Шлифовальная» записалась 5 мм вместо 3,5
+        env=Env();env.layout_height={3:5.0}
+        with tempfile.TemporaryDirectory() as folder,env.patch(folder):
+            data=V.read('x',None,[2,3]);V.write('x',data,data['entries'])
+            for row in env.pages[3].Stamp.Text(2000).rows:
+                if row.Str.strip():self.assertEqual(row.item.Height,3.5)
+
+    def test_restore_returns_fonts_after_layout_override(self):
+        env=Env();env.layout_height={2:5.0,3:5.0};env.fail_sheet=3
+        with tempfile.TemporaryDirectory() as folder,env.patch(folder):
+            data=V.read('x',None,[2,3]);data['pages'][0]['capacity']=2;data['pages'][1]['capacity']=10
+            chosen=[e for e in data['entries'] if e['text'] in ['Микрометр МК-25 Mitutoyo','Державка PСLNL 1616H-06']]
+            with self.assertRaisesRegex(RuntimeError,'восстановлены и проверены'):V.write('x',data,chosen)
 
     def test_pending_stamp_is_updated_and_rechecked(self):
         env=Env();env.pages[2].Stamp.Crossed=True

@@ -662,6 +662,46 @@ def verify_text(verified,rows,index,api='API7'):
 
 
 CHECKED_FONT=('FontName','Height','Bold')
+SET_FONT=('FontName','Height','WidthFactor','Bold','Italic')
+
+
+def fix_fonts(module,sh,wanted,cid=2000):
+    """Шрифт строк напрямую через API7. Оформление листа (стиль текста графы
+    другой библиотеки) может перекрыть высоту/жирность, заданные при записи
+    через API5: лист 4 «ТП … тест» дал 5 мм вместо 3,5."""
+    t=sh.Stamp.Text(cid);changed=0
+    for i in range(min(int(t.Count),len(wanted))):
+        want=wanted[i]
+        if not want:continue
+        line=t.TextLine(i)
+        for j in range(int(line.Count)):
+            item=line.TextItem(j)
+            if int(K.get(item,'ItemType',0))!=0 or not str(K.get(item,'Str','') or '').strip():continue
+            f=module.ITextFont(item)
+            for key in SET_FONT:
+                if want.get(key) is not None and getattr(f,key)!=want[key]:
+                    setattr(f,key,want[key]);changed+=1
+    if changed:J.call('IStamp.Update',sh.Stamp.Update,column=cid,mode='шрифт строк')
+    J.event('Шрифт строк ведомости выставлен через API7',column=cid,changed=changed)
+    return changed
+
+
+def first_font(line):
+    return next((r['font'] for r in line.get('runs',[]) if r.get('type')==0 and str(r.get('text','')).strip()),None)
+
+
+def visible(lines):
+    """Что видно на листе: текст строк и шрифт (имя, высота, жирность)."""
+    out=[(clean(l['text']),[(r['text'],str(r['font'].get('FontName')),round(float(r['font'].get('Height') or 0),3),bool(r['font'].get('Bold')))
+                           for r in l.get('runs',[]) if r.get('type')==0 and str(r.get('text','')).strip()]) for l in lines]
+    while out and not out[-1][0]:out.pop()
+    return out
+
+
+def native_texts(lines):
+    out=[clean(X.display(l['text'])) for l in lines]
+    while out and not out[-1]:out.pop()
+    return out
 
 
 def verify_written(verified,rows,data,index):
@@ -791,7 +831,14 @@ def write(path,data,entries):
                 raise RuntimeError(MISSING_2000%(page['index']+1,'МК ВО',page['signature']['style']))
             save_report()
             J.event('Обратное чтение API7 после перерисовки',sheet=page['index']+1,column=2000,actual=verified)
-            verify_written(verified,rows,data,page['index'])
+            try:verify_written(verified,rows,data,page['index'])
+            except RuntimeError as exc:
+                if 'Форматирование' not in str(exc):raise
+                J.event('Оформление листа изменило шрифт строк — выставляю через API7',sheet=page['index']+1,detail=str(exc))
+                fix_fonts(module,sh,[(data['heading'] if r['heading'] else data['body'])['font'] for r in rows])
+                sh=X.sheet_at(doc.LayoutSheets,page['index'])
+                verified=snapshot_text(sh.Stamp.Text(2000),module);record['actual']=verified;save_report()
+                verify_written(verified,rows,data,page['index'])
             after_other={cid:snapshot_text(sh.Stamp.Text(cid),module) for cid in column_ids(sh.Stamp) if cid!=2000}
             if after_other!=other:raise RuntimeError('Лист %d: изменились графы вне ведомости.'%(page['index']+1))
             J.event('Лист подтверждён двумя API',sheet=page['index']+1,column=2000,rows=len(rows),other_columns=list(other))
@@ -820,12 +867,17 @@ def write(path,data,entries):
                 native_write(doc5,page['index'],original)
                 native_restored=native_styles(mod5,k5,native_read(mod5,doc5,page['index']))
                 J.event('Обратное чтение API5 после восстановления',sheet=page['index']+1,column=2000,actual=native_restored)
-                if without_empty(native_restored)!=without_empty(original_text):
+                # Текст сравниваем через API5; флаги шрифта API5 после повторной
+                # записи КОМПАС раскладывает иначе, поэтому шрифт возвращаем и
+                # проверяем по тому, что видно (API7).
+                if native_texts(native_restored)!=native_texts(original_text):
                     raise RuntimeError('API5: исходная графа не восстановилась полностью: '+first_difference(native_restored,original_text))
                 refresh_stamp(module,doc,page['index'])
                 sh=X.sheet_at(doc.LayoutSheets,page['index'])
+                fix_fonts(module,sh,[first_font(l) for l in page['old']])
+                sh=X.sheet_at(doc.LayoutSheets,page['index'])
                 restored_api7=snapshot_text(sh.Stamp.Text(2000),module)
-                if without_empty(restored_api7)!=without_empty(page['old']):
+                if visible(restored_api7)!=visible(page['old']):
                     raise RuntimeError('API7: исходная графа не восстановилась полностью: '+first_difference(restored_api7,page['old']))
                 now={cid:snapshot_text(sh.Stamp.Text(cid),module) for cid in column_ids(sh.Stamp) if cid!=2000}
                 if now!=other:raise RuntimeError('Прочие графы изменились.')
@@ -842,10 +894,10 @@ def write(path,data,entries):
             try:
                 actual=native_styles(mod5,k5,native_read(mod5,doc5,page['index']))
                 stamp=X.sheet_at(doc.LayoutSheets,page['index']).Stamp
-                if without_empty(actual)!=without_empty(original_text):
+                if native_texts(actual)!=native_texts(original_text):
                     raise RuntimeError('Итоговое восстановление (API5) не совпало: '+first_difference(actual,original_text))
                 final_api7=snapshot_text(stamp.Text(2000),module)
-                if without_empty(final_api7)!=without_empty(page['old']):
+                if visible(final_api7)!=visible(page['old']):
                     raise RuntimeError('Итоговое восстановление (API7) не совпало: '+first_difference(final_api7,page['old']))
             except Exception as err:
                 restored=False;restore_errors.append('Лист %d: %s'%(page['index']+1,err))
