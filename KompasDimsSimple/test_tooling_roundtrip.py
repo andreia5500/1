@@ -66,7 +66,8 @@ class Stamp:
 
 class NativeStamp:
     def __init__(self,env,index):self.env=env;self.index=index;self.cid=None;self.selected=False;self.enum_index=0
-    def GetSheetNumb(self):return self.index+1
+    @property
+    def SheetNumb(self):return self.index+1
     def ksOpenStamp(self):return 1
     def ksCloseStamp(self):return 1
     def ksColumnNumber(self,cid):self.cid=cid;self.selected=True;return 1

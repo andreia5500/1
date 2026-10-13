@@ -61,6 +61,22 @@ class Tests(unittest.TestCase):
         p=N(Init=lambda:None)
         with patch('transfer._text_item_param',return_value=p):X.write_one(doc,None,15,6125,'Ø7$m-0,36;$',{})
         self.assertEqual(seen,[('sheet',16),6125,'@2~7$m-0,36;$'])
+    def test_cell_cleared_before_write(self):
+        # Журнал 13.10: 'Главный вид:' поверх '@2~12$m…$' читалось как 'Главный вид:@2~'.
+        seen=[]
+        stamp=N(ksOpenStamp=lambda:1,ksClearStamp=lambda i:seen.append(('clear',i)) or 1,
+                ksColumnNumber=lambda i:seen.append(('select',i)) or 1,ksTextLine=lambda p:seen.append(p.s) or 1,
+                ksCloseStamp=lambda:seen.append('close') or 1)
+        with patch('transfer._text_item_param',return_value=N(Init=lambda:None)):
+            X.write_one(N(GetStampEx=lambda n:stamp),None,15,6126,'Главный вид:',{})
+        self.assertEqual(seen,[('clear',6126),('select',6126),'Главный вид:','close'])
+    def test_rejected_clear_no_write(self):
+        seen=[]
+        stamp=N(ksOpenStamp=lambda:1,ksClearStamp=lambda i:0,ksColumnNumber=lambda i:seen.append(i) or 1,
+                ksTextLine=lambda p:seen.append(p) or 1,ksCloseStamp=lambda:seen.append('close') or 1)
+        with patch('transfer._text_item_param',return_value=N(Init=lambda:None)):
+            with self.assertRaises(RuntimeError):X.write_one(N(GetStampEx=lambda n:stamp),None,15,6126,'20',{})
+        self.assertEqual(seen,['close'])
     def test_rejected_column_no_write(self):
         seen=[];stamp=N(ksOpenStamp=lambda:1,ksColumnNumber=lambda i:0,ksTextLine=lambda p:seen.append(1),ksCloseStamp=lambda:1)
         with patch('transfer._text_item_param',return_value=N(Init=lambda:None)):

@@ -165,6 +165,11 @@ def write_one(doc5, kompas5, sheet, cid, text, font):
     stamp = doc5.GetStampEx(sheet + 1)
     check_result(stamp.ksOpenStamp(), 'открытие основной надписи')
     try:
+        # ksTextLine over a cell with a special symbol (e.g. @2~ before a
+        # diameter) left that symbol in place: 'Главный вид:@2~'. Clear the
+        # whole cell first so the new line fully replaces the old content.
+        if hasattr(stamp, 'ksClearStamp'):
+            check_result(stamp.ksClearStamp(cid), 'очистка графы %s' % cid)
         check_result(stamp.ksColumnNumber(cid), 'выбор графы %s' % cid)
         check_result(stamp.ksTextLine(param), 'запись графы %s' % cid)
     finally:

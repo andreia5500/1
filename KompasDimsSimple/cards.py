@@ -156,7 +156,8 @@ def write(path, block, pages):
                     actual = X.read_cell(sh.Stamp, cell['id'], module)
                     J.event('Обратное чтение строки карты',sheet=page['index']+1,column=cell['id'],actual=actual)
                     if actual['text'].strip() != X.safe(text).strip():
-                        raise RuntimeError('Лист %d, графа %d: запись не подтверждена.' % (page['index'] + 1, cell['id']))
+                        raise RuntimeError('Лист %d, графа %d: запись не подтверждена: ожидалось %r, прочитано %r.'
+                                           % (page['index'] + 1, cell['id'], X.safe(text), actual['text']))
                     if text and actual['font'] and actual['font']['Bold'] != font['Bold']:
                         raise RuntimeError('Лист %d: жирность шрифта не подтверждена.' % (page['index'] + 1))
                 # Пустой разделитель действительно пуст во всех трёх графах.

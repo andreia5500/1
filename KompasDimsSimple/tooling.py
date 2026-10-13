@@ -307,8 +307,10 @@ def native_arrays(mod5,k5,data,planned):
 def native_stamp(doc5,index):
     stamp=J.call('GetStampEx',doc5.GetStampEx,index+1,sheet=index+1,column=2000)
     if stamp is None:raise RuntimeError('API5 не вернул штамп листа %d.'%(index+1))
-    actual=J.call('GetSheetNumb',stamp.GetSheetNumb,sheet=index+1,column=2000)
-    if int(actual)!=index+1:
+    # ksStamp exposes the sheet number as the SheetNumb property, not a method.
+    actual=getattr(stamp,'SheetNumb',None)
+    J.event('Номер листа штампа API5',sheet=index+1,actual=actual)
+    if actual is None or int(actual)!=index+1:
         raise RuntimeError('API5 вернул штамп другого листа: выбран %d, получен %s.'%(index+1,actual))
     return stamp
 

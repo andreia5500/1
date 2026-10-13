@@ -166,12 +166,21 @@ class ToolingTests(unittest.TestCase):
 
     def test_native_read_selects_column_before_reading(self):
         calls=[]
-        stamp=NS(GetSheetNumb=lambda:3,ksOpenStamp=lambda:1,ksColumnNumber=lambda cid:calls.append(cid) or 1,
+        stamp=NS(SheetNumb=3,ksOpenStamp=lambda:1,ksColumnNumber=lambda cid:calls.append(cid) or 1,
                  ksGetStampColumnText=lambda _:('array',2000),ksCloseStamp=lambda:1)
         self.assertEqual(V.native_read(NS(ksDynamicArray=lambda a:a),NS(GetStampEx=lambda n:stamp),2),'array')
         self.assertEqual(calls,[2000])
         stamp.ksGetStampColumnText=lambda _:('wrong',2002)
         with self.assertRaisesRegex(RuntimeError,'другую графу'):V.native_read(NS(),NS(GetStampEx=lambda n:stamp),2)
+
+    def test_native_stamp_uses_sheetnumb_property(self):
+        # Реальный ksStamp (gen_py) не имеет метода GetSheetNumb, только свойство SheetNumb.
+        class Stamp:
+            SheetNumb=4
+            def __getattr__(self,name):raise AttributeError(name)
+        stamp=Stamp()
+        self.assertIs(V.native_stamp(NS(GetStampEx=lambda n:stamp),3),stamp)
+        with self.assertRaisesRegex(RuntimeError,'другого листа'):V.native_stamp(NS(GetStampEx=lambda n:stamp),2)
 
     def test_ke_wrapped_model_is_one_position(self):
         rows=['Сверло твердосплавное','WPC-UNI.4,5.R.3D.DIN6535. HB TIALN','','Пластина CCMT 060202']
@@ -186,7 +195,7 @@ class ToolingTests(unittest.TestCase):
 
     def test_native_commit_uses_stamp_editing_and_closes_on_failure(self):
         calls=[]
-        stamp=NS(GetSheetNumb=lambda:4,ksOpenStamp=lambda:calls.append('open') or 1,
+        stamp=NS(SheetNumb=4,ksOpenStamp=lambda:calls.append('open') or 1,
                  ksColumnNumber=lambda cid:calls.append(('select',cid)) or 1,
                  ksSetStampColumnText=lambda cid,arr:calls.append(('write',cid,arr)) or 0,
                  ksCloseStamp=lambda:calls.append('close') or 1)
