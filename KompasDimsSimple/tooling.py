@@ -66,6 +66,14 @@ def column_ids(stamp):
     return ids
 
 
+# MK VO body rows are separate stamp cells, one per row. Determined from a TP
+# with markers typed into rows 1, 2 and 17 of both layouts (13.10.2026):
+# CDW records 0x4D80/0x4D81/0x4D90 = 0x4000 + 3456/3457/3472.
+ROW_IDS={200:tuple(range(3456,3473)),24:tuple(range(3456,3473))}
+ROW_FONT=dict(FontName='GOST type A',Height=3.5,WidthFactor=1.0,Italic=True,Bold=False,Underline=False,Color=0)
+ROW_LIMIT=60  # characters per row before wrapping onto the next row
+
+
 MISSING_2000=('Графы 2000 нет в оформлении листа %d (%s, стиль %s): КОМПАС хранит текст, '
               'но не выводит его на лист. Нужны номера граф строк ведомости этого оформления.')
 
@@ -204,6 +212,9 @@ def read(path,sources,targets):
     if auto:
         unknown=[str(i+1) for i,_,name in desc if name=='Название не определено']
         if unknown:warnings.append('Не распознаны и пропущены листы: '+', '.join(unknown))
+    styles={desc[i][1] for i in targets}
+    if styles<=set(ROW_IDS):
+        return read_rows(doc,module,desc,targets,entries,snapshots,warnings)
     pages=[];heading=None;body=None;sample_sheets=[];group_names={}
     for index in sorted(targets):
         if not desc[index][2].startswith('МК ВО'):raise ValueError('Лист %d не распознан как МК ВО. Сохраните оформление ТП и перечитайте файл.'%(index+1))
@@ -253,6 +264,115 @@ def read(path,sources,targets):
     limit=max(20,min(100,int(width/charwidth)))
     return dict(count=int(doc.LayoutSheets.Count),sources=snapshots,pages=pages,entries=entries,samples=sample_sheets,
                 heading=heading,body=body,limit=limit,warnings=warnings,descriptions=desc,group_names=group_names)
+
+
+def read_rows(doc,module,desc,targets,entries,snapshots,warnings):
+    """MK VO with one stamp cell per body row (layouts 200/24)."""
+    pages=[];group_names={};font=None
+    for index in sorted(targets):
+        if not desc[index][2].startswith('МК ВО'):raise ValueError('Лист %d не распознан как МК ВО. Сохраните оформление ТП и перечитайте файл.'%(index+1))
+        sh=X.sheet_at(doc.LayoutSheets,index)
+        cells=[X.read_cell(sh.Stamp,cid,module) for cid in ROW_IDS[desc[index][1]]]
+        if any(c['count']>1 for c in cells):
+            raise ValueError('Лист %d: в строке ведомости несколько абзацев; оформление отличается от построчного.'%(index+1))
+        pages.append(dict(index=index,signature=C.signature(sh),cells=cells,capacity=len(cells)))
+    # Existing headings and fonts of any MK VO sheet are reused.
+    for index,style,name in desc:
+        if style not in ROW_IDS or not name.startswith('МК ВО'):continue
+        sh=X.sheet_at(doc.LayoutSheets,index)
+        for cid in ROW_IDS[style]:
+            cell=X.read_cell(sh.Stamp,cid,module);text=clean(X.display(cell['text']))
+            if not text:continue
+            if text.rstrip(':').casefold() in HEADINGS:group_names.setdefault(HEADINGS[text.rstrip(':').casefold()],text.rstrip(':'))
+            elif font is None and cell['font']:font=dict(cell['font'])
+    font=dict(font or ROW_FONT,Bold=False)
+    J.event('Построчная ведомость МК ВО',targets=[p['index']+1 for p in pages],ids=[ROW_IDS[desc[p['index']][1]] for p in pages],
+            font=font,pages=pages)
+    return dict(mode='rows',count=int(doc.LayoutSheets.Count),sources=snapshots,pages=pages,entries=entries,
+                font=font,limit=ROW_LIMIT,warnings=warnings,descriptions=desc,group_names=group_names)
+
+
+def write_rows(path,data,entries):
+    planned=plan(data,entries)
+    J.require_storage()
+    from sketch import context
+    module,mod5,k5,app,doc,doc5=context(path)
+    if int(doc.LayoutSheets.Count)!=data['count']:raise ValueError('Состав листов изменился. Перечитайте ТП.')
+    for source in data['sources']:
+        sh=X.sheet_at(doc.LayoutSheets,source['index'])
+        if C.signature(sh)!=source['signature']:raise ValueError('Источник изменился. Перечитайте ТП.')
+        for cid,rows in source['cells'].items():
+            if text_lines(sh.Stamp,int(cid))!=rows:raise ValueError('Инструмент в источнике изменился. Перечитайте ТП.')
+    for page in data['pages']:
+        sh=X.sheet_at(doc.LayoutSheets,page['index'])
+        if C.signature(sh)!=page['signature'] or [X.read_cell(sh.Stamp,c['id'],module) for c in page['cells']]!=page['cells']:
+            raise ValueError('Ведомость изменилась после просмотра. Перечитайте ТП.')
+    backup=X.backup_folder()/('tooling_'+datetime.now().strftime('%Y%m%d_%H%M%S_%f')+'.json')
+    report=dict(version=J.VERSION,operation=J.operation_id(),path=path,mode='rows',before=data,after=planned,readback=[],status='prepared')
+    def save_report():
+        backup.write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
+    save_report()
+    J.event('План записи МК ВО по строкам',path=path,targets=[p['index']+1 for p in data['pages']],planned=planned,report=str(backup))
+    touched=[]
+    def check(sh,index,cid,text,bold):
+        actual=X.read_cell(sh.Stamp,cid,module)
+        report['readback'].append(dict(sheet=index+1,column=cid,actual=actual))
+        J.event('Обратное чтение строки ведомости',sheet=index+1,column=cid,actual=actual)
+        if actual['text'].strip()!=X.safe(text).strip():
+            raise RuntimeError('Лист %d, графа %d: запись не подтверждена: ожидалось %r, прочитано %r.'%(index+1,cid,X.safe(text),actual['text']))
+        if clean(text) and cid not in column_ids(sh.Stamp):
+            raise RuntimeError('Лист %d: графы %d нет в оформлении листа — текст не будет виден.'%(index+1,cid))
+        if clean(text) and actual['font'] and bold is not None and bool(actual['font']['Bold'])!=bold:
+            raise RuntimeError('Лист %d, графа %d: жирность шрифта не подтверждена.'%(index+1,cid))
+    try:
+        for page,rows in zip(data['pages'],planned):
+            sh=X.sheet_at(doc.LayoutSheets,page['index'])
+            rows=rows+[dict(text='',heading=False)]*(len(page['cells'])-len(rows))
+            for old,row in zip(page['cells'],rows):
+                C.require_active(app,path)
+                if not clean(row['text']) and not clean(old['text']):continue
+                font=dict(data['font'],Bold=bool(row['heading']))
+                touched.append((page['index'],old))
+                X.write_one(doc5,k5,page['index'],old['id'],row['text'],font)
+                check(sh,page['index'],old['id'],row['text'],font['Bold'])
+            refresh_stamp(module,doc,page['index'])
+        refresh_document(module,app,doc,path)
+        # Re-read every row after all pages are written and redrawn.
+        for page,rows in reversed(list(zip(data['pages'],planned))):
+            sh=X.sheet_at(doc.LayoutSheets,page['index'])
+            rows=rows+[dict(text='',heading=False)]*(len(page['cells'])-len(rows))
+            for old,row in zip(page['cells'],rows):
+                check(sh,page['index'],old['id'],row['text'],bool(row['heading']))
+        for source in data['sources']:
+            stamp=X.sheet_at(doc.LayoutSheets,source['index']).Stamp
+            if any(text_lines(stamp,int(cid))!=old for cid,old in source['cells'].items()):
+                raise RuntimeError('Изменились графы источника: лист %d.'%(source['index']+1))
+        J.require_storage()
+        report['status']='verified_rows';save_report()
+    except Exception as exc:
+        report['error']=str(exc)
+        J.failure('Запись МК ВО остановлена, начинается восстановление',exc,path=path,report=str(backup))
+        errors=[]
+        for index,old in reversed(touched):
+            try:
+                X.write_one(doc5,k5,index,old['id'],old['text'],old['font'] or data['font'])
+                actual=X.read_cell(X.sheet_at(doc.LayoutSheets,index).Stamp,old['id'],module)
+                if actual['text'].strip()!=old['text'].strip():
+                    raise RuntimeError('графа %d: ожидалось %r, прочитано %r'%(old['id'],old['text'],actual['text']))
+            except Exception as err:
+                errors.append('Лист %d: %s'%(index+1,err));J.failure('Ошибка восстановления строки',err,sheet=index+1,column=old['id'])
+        try:refresh_document(module,app,doc,path)
+        except Exception as err:report['restore_redraw_error']=str(err)
+        report['restored']=not errors;report['restore_errors']=errors;report['status']='rolled_back' if not errors else 'rollback_failed'
+        try:save_report()
+        except OSError:pass
+        status='Исходные строки ведомости восстановлены и проверены.' if not errors else 'Восстановление не подтверждено. Закройте ТП без сохранения.'
+        raise RuntimeError('Запись остановлена. %s\nОтчёт: %s\n%s%s'%(status,backup,exc,
+                           '\n\nВосстановление:\n'+'\n'.join(errors) if errors else '')) from exc
+    count=len({key(e['text']) for e in entries})
+    J.event('МК ВО подтверждена после записи',path=path,positions=count,report=str(backup),
+            verification='построчно, API7 + перечень граф оформления; внешний вид автоматически не подтверждён')
+    return count
 
 
 def plan(data,entries):
@@ -529,6 +649,7 @@ def same_props(a,b):
 
 
 def write(path,data,entries):
+    if data.get('mode')=='rows':return write_rows(path,data,entries)
     planned=plan(data,entries)
     J.require_storage()
     from sketch import context

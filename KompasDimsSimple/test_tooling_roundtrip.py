@@ -207,6 +207,7 @@ class RoundTrip(unittest.TestCase):
                     if i in [2,3] and cid==2000:continue
                     self.assertEqual(V.snapshot_text(p.Stamp.Text(cid),env.mod7),V.snapshot_text(old,env.mod7))
 
+    @patch.object(V,'ROW_IDS',{})  # legacy single-cell (2000) layouts
     def test_empty_selected_page_uses_unselected_sample(self):
         env=Env();env.pages[3].Stamp.fields[2000]=Text([])
         with tempfile.TemporaryDirectory() as folder,env.patch(folder):
@@ -264,6 +265,7 @@ class RoundTrip(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'Графы 2000 нет'):V.read('x',None,[2])
             self.assertEqual(env.writes,[])
 
+    @patch.object(V,'ROW_IDS',{})  # legacy single-cell (2000) layouts
     def test_write_to_cell_missing_from_layout_is_not_success(self):
         env=Env();env.pages[3].Stamp.fields[2000]=Text([]);env.pages[3].Stamp.hidden.add(2000)
         with tempfile.TemporaryDirectory() as folder,env.patch(folder):
