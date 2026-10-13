@@ -201,6 +201,15 @@ class ToolingTests(unittest.TestCase):
         self.assertEqual(rows[0]['text'],'Калибр-скоба @2~11f7')
         V.verify_text(rows,[dict(text='Калибр-скоба Ø11f7')],2,'API5')
 
+    def test_native_font_style_default_flags(self):
+        # Отчёт 13.10: заголовок флаги 0x1100 (API5), API7 — курсив по стилю.
+        native=dict(FontName='GOST type A',Height=3.5,WidthFactor=1.,Color=0,Italic=None,Bold=True,Underline=None)
+        api7=dict(FontName='GOST type A',Height=3.5,WidthFactor=1.,Italic=True,Bold=True,Underline=False,Color=0)
+        self.assertTrue(V.same_native_font(native,api7))
+        self.assertFalse(V.same_native_font(dict(native,Bold=False),api7))
+        self.assertFalse(V.same_native_font(dict(native,Italic=False),api7))
+        self.assertFalse(V.same_native_font(dict(native,Height=5.),api7))
+
     def test_first_difference_names_field(self):
         a=[dict(text='x',style=0)];b=[dict(text='x',style=5)]
         self.assertIn('style',V.first_difference(a,b))

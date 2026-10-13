@@ -400,8 +400,12 @@ def native_styles(mod5,k5,array):
             # ksTextItemFont spells its properties as in the type library
             # (bitVector, not bitvector); gen_py lookups are case-sensitive.
             f=item.GetItemFont();g=lambda name:X.get_prop(f,name);bits=int(g('bitvector'))
+            # ON/OFF bits are explicit overrides; with neither set the value comes
+            # from the text style (KOMPAS keeps only 0x1000 for italic GOST
+            # headings), so it is unknown here (None), not False.
+            flag=lambda on,off:True if bits&on else False if bits&off else None
             font=dict(FontName=str(g('fontName')),Height=float(g('height')),WidthFactor=float(g('ksu')),
-                      Color=int(g('color')),Italic=bool(bits&0x40),Bold=bool(bits&0x100),Underline=bool(bits&0x400))
+                      Color=int(g('color')),Italic=flag(0x40,0x80),Bold=flag(0x100,0x200),Underline=flag(0x400,0x800))
             components.append(dict(text=str(item.s or ''),type=int(item.type),snumb=snumb,font=font,flags=bits))
         result.append(dict(text=''.join(texts),style=int(line.style),items=components))
     return result
@@ -448,7 +452,7 @@ def verify_native(actual,rows,data,index):
         template=data['heading'] if row['heading'] else data['body']
         if line['style']!=template.get('style',0):
             raise RuntimeError('API5: лист %d, строка %d, стиль %s вместо %s.'%(index+1,n+1,line['style'],template.get('style',0)))
-        if any(not same_props(item['font'],template['font']) for item in line['items'] if item['type']==0 and item['text'].strip()):
+        if any(not same_native_font(item['font'],template['font']) for item in line['items'] if item['type']==0 and item['text'].strip()):
             raise RuntimeError('API5: лист %d, строка %d, шрифт не совпал с образцом.'%(index+1,n+1))
 
 
@@ -490,6 +494,12 @@ def first_difference(actual,expected):
                 json.dumps({k:e.get(k) for k in fields},ensure_ascii=False)[:400],
                 json.dumps({k:a.get(k) for k in fields},ensure_ascii=False)[:400])
     return 'отличий не найдено'
+
+
+def same_native_font(native,expected):
+    """API5 font vs API7 template; flags left to the text style are not compared."""
+    known={k:v for k,v in native.items() if v is not None}
+    return same_props(known,{k:expected.get(k) for k in known})
 
 
 def same_props(a,b):
