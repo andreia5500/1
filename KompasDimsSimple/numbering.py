@@ -13,14 +13,21 @@ import sheet_names as N
 import tooling as V
 import debug_log as J
 
-# Оформления листов-продолжений и графа номера листа в документе.
-PAGE_CELL = {22: 0, 24: 0, 5: 1813, 19: 1813}
-# ОК ТК — продолжение: графа номера пока неизвестна (в присланном ТП не заполнена).
-CONTINUATION = set(PAGE_CELL) | {20}
+# Графа номера листа на продолжениях — по ТИПУ документа. Номер стиля сам по
+# себе ничего не значит: в разных TEHNOLOGI.LYT стиль 20 — это и МК ВО,
+# и ОК ТК — продолжение (так было в «ТП … тест.cdw»).
+PAGE_CELL = {'МК': 0, 'МК ВО': 0, 'КЭ ЧПУ': 1813}
+CONT_WORDS = ('продолжение', 'инструмент', 'эскиз')
 
 
 def doc_type(name):
     return name.split(' — ')[0].strip()
+
+
+def is_continuation(style, name):
+    if doc_type(name) == 'ОК ТК':
+        return style == 20   # ОК ТК — продолжение называется так же, как главный лист
+    return any(word in name for word in CONT_WORDS)
 
 
 def plan(descriptions):
@@ -32,17 +39,18 @@ def plan(descriptions):
     for index, style, name in descriptions:
         kind = doc_type(name)
         unknown = name == 'Название не определено'
-        if unknown or style not in CONTINUATION or kind != current:
+        cont = not unknown and is_continuation(style, name)
+        if unknown or not cont or kind != current:
             doc += 1
             page = 1
             current = None if unknown else kind
         else:
             page += 1
-        cell = PAGE_CELL.get(style)
+        cell = PAGE_CELL.get(kind) if cont else None
         if unknown:
             action = 'лист не распознан — пропущен'
             cell = None
-        elif style not in CONTINUATION:
+        elif not cont:
             action = 'главный лист — номер выводит оформление'
             cell = None
         elif cell is None:
@@ -78,7 +86,12 @@ def write_cell(module, doc, index, cid, text):
     МК/МК ВО как раз 0."""
     stamp = X.sheet_at(doc.LayoutSheets, index).Stamp
     stamp.Text(cid).Str = text
-    X.check_result(J.call('IStamp.Update', stamp.Update, sheet=index + 1, column=cid), 'обновление штампа листа %d' % (index + 1))
+    # Update() у части оформлений (КЭ ЧПУ — эскиз, лист 13 тестового ТП)
+    # возвращает «нет», хотя текст записан. Итог решают обратное чтение и
+    # проверка графы в оформлении листа (см. write), а не этот флаг.
+    result = J.call('IStamp.Update', stamp.Update, sheet=index + 1, column=cid)
+    if not result:
+        J.event('IStamp.Update вернул «нет» — проверяется обратным чтением', sheet=index + 1, column=cid, result=result)
 
 
 def write(path, data):

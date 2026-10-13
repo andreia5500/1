@@ -210,6 +210,21 @@ class ToolingTests(unittest.TestCase):
         self.assertFalse(V.same_native_font(dict(native,Italic=False),api7))
         self.assertFalse(V.same_native_font(dict(native,Height=5.),api7))
 
+    def test_restore_ignores_empty_component_dropped_by_kompas(self):
+        bold=dict(FontName='GOST type A',Height=3.5,Bold=True)
+        before=[dict(text='Токарная',style=0,items=[dict(text='Токарная',type=0,font=bold),dict(text='',type=0,font={})])]
+        after=[dict(text='Токарная',style=0,items=[dict(text='Токарная',type=0,font=bold)])]
+        self.assertEqual(V.without_empty(after),V.without_empty(before))
+
+    def test_formatting_check_names_mismatch_and_ignores_step(self):
+        font=dict(FontName='GOST type A',Height=3.5,WidthFactor=1.,Italic=True,Bold=False,Underline=False,Color=0)
+        props=dict(Align=0,Step=8.25)
+        data=dict(heading=dict(props=props,font=dict(font,Bold=True)),body=dict(props=props,font=font))
+        line=lambda f,st:dict(text='Сверла',props=dict(Align=0,Step=st),runs=[dict(text='Сверла',type=0,font=f)])
+        V.verify_written([line(font,5.0)],[dict(text='Сверла',heading=False)],data,2)
+        with self.assertRaisesRegex(RuntimeError,"строка 1 .*Height 5.0 вместо 3.5"):
+            V.verify_written([line(dict(font,Height=5.0),8.25)],[dict(text='Сверла',heading=False)],data,2)
+
     def test_first_difference_names_field(self):
         a=[dict(text='x',style=0)];b=[dict(text='x',style=5)]
         self.assertIn('style',V.first_difference(a,b))

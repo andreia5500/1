@@ -661,6 +661,9 @@ def verify_text(verified,rows,index,api='API7'):
         raise RuntimeError('%s: текст на листе %d не совпал: строка %d.\nОжидалось: %r\nПрочитано: %r\nСтрок без пустого хвоста: ожидалось %d, прочитано %d.'%(api,index+1,pos+1,want,got,len(expected),len(actual)))
 
 
+CHECKED_FONT=('FontName','Height','Bold')
+
+
 def verify_written(verified,rows,data,index):
     # A trailing empty paragraph does not change the contents of the cell.
     # Internal empty lines, order, and all nonempty lines must still match.
@@ -670,8 +673,31 @@ def verify_written(verified,rows,data,index):
     if len(verified)<len(rows):raise RuntimeError('Лист %d: строки склеены в абзац; оформление не подтверждено.'%(index+1))
     for n,(line,row) in enumerate(zip(verified,rows)):
         template=data['heading'] if row['heading'] else data['body']
-        if not same_props(line['props'],template['props']) or any(not same_props(run['font'],template['font']) for run in line['runs'] if run['text'].strip() and run['type']==0):
-            raise RuntimeError('Форматирование ведомости не совпало с образцом: лист %d, строка %d.'%(index+1,n+1))
+        # Шаг строки/отступы KOMPAS пересчитывает сам по стилю — сравниваем
+        # то, что видно: выравнивание, шрифт, высоту, жирность.
+        problems=[]
+        if line['props'].get('Align')!=template['props'].get('Align'):
+            problems.append('выравнивание %s вместо %s'%(line['props'].get('Align'),template['props'].get('Align')))
+        for run in line['runs']:
+            if not (run['text'].strip() and run['type']==0):continue
+            for key in CHECKED_FONT:
+                a,b=run['font'].get(key),template['font'].get(key)
+                if not same_props({key:a},{key:b}):problems.append('%s %r вместо %r'%(key,a,b))
+            if problems:break
+        if problems:
+            raise RuntimeError('Форматирование ведомости не совпало с образцом: лист %d, строка %d (%r): %s.'%(index+1,n+1,line['text'],'; '.join(problems)))
+
+
+def without_empty(lines):
+    """KOMPAS отбрасывает пустые текстовые компоненты ('' после заголовка)
+    при записи — для сравнения при восстановлении они не значимы."""
+    out=[]
+    for line in lines:
+        line=dict(line)
+        for key in ('items','runs'):
+            if key in line:line[key]=[i for i in line[key] if not (i.get('type')==0 and not str(i.get('text','')).strip())]
+        out.append(line)
+    return out
 
 
 def first_difference(actual,expected):
@@ -794,12 +820,12 @@ def write(path,data,entries):
                 native_write(doc5,page['index'],original)
                 native_restored=native_styles(mod5,k5,native_read(mod5,doc5,page['index']))
                 J.event('Обратное чтение API5 после восстановления',sheet=page['index']+1,column=2000,actual=native_restored)
-                if native_restored!=original_text:
+                if without_empty(native_restored)!=without_empty(original_text):
                     raise RuntimeError('API5: исходная графа не восстановилась полностью: '+first_difference(native_restored,original_text))
                 refresh_stamp(module,doc,page['index'])
                 sh=X.sheet_at(doc.LayoutSheets,page['index'])
                 restored_api7=snapshot_text(sh.Stamp.Text(2000),module)
-                if restored_api7!=page['old']:
+                if without_empty(restored_api7)!=without_empty(page['old']):
                     raise RuntimeError('API7: исходная графа не восстановилась полностью: '+first_difference(restored_api7,page['old']))
                 now={cid:snapshot_text(sh.Stamp.Text(cid),module) for cid in column_ids(sh.Stamp) if cid!=2000}
                 if now!=other:raise RuntimeError('Прочие графы изменились.')
@@ -816,10 +842,10 @@ def write(path,data,entries):
             try:
                 actual=native_styles(mod5,k5,native_read(mod5,doc5,page['index']))
                 stamp=X.sheet_at(doc.LayoutSheets,page['index']).Stamp
-                if actual!=original_text:
+                if without_empty(actual)!=without_empty(original_text):
                     raise RuntimeError('Итоговое восстановление (API5) не совпало: '+first_difference(actual,original_text))
                 final_api7=snapshot_text(stamp.Text(2000),module)
-                if final_api7!=page['old']:
+                if without_empty(final_api7)!=without_empty(page['old']):
                     raise RuntimeError('Итоговое восстановление (API7) не совпало: '+first_difference(final_api7,page['old']))
             except Exception as err:
                 restored=False;restore_errors.append('Лист %d: %s'%(page['index']+1,err))

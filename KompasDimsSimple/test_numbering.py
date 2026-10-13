@@ -23,6 +23,21 @@ class Plan(unittest.TestCase):
         self.assertIn('главный',rows[0]['action'])
 
 
+class StyleNumbersDiffer(unittest.TestCase):
+    def test_style_20_mk_vo_is_main_sheet_and_ok_tk_20_is_continuation(self):
+        # «ТП … тест.cdw»: МК ВО оформлен стилем 20 другой библиотеки
+        rows=P.plan([(1,180,'ВТД'),(2,20,'МК ВО'),(3,24,'МК ВО — продолжение'),(4,18,'ОК ТК — карта контроля'),(5,20,'ОК ТК — карта контроля')])
+        self.assertIn('главный',rows[1]['action'])
+        self.assertEqual((rows[2]['page'],rows[2]['cell']),(2,0))
+        self.assertEqual(rows[4]['page'],2);self.assertIn('неизвестна',rows[4]['action'])
+
+    def test_update_returning_false_is_not_an_error(self):
+        text=NS(Str='')
+        stamp=NS(Text=lambda cid:text,Update=lambda:False)
+        with patch.object(P.X,'sheet_at',return_value=NS(Stamp=stamp)):P.write_cell(NS(),NS(LayoutSheets=None),12,1813,'5')
+        self.assertEqual(text.Str,'5')
+
+
 class Sheet:
     def __init__(self,cells,layout):
         self.cells=dict(cells);self.layout=set(layout);self.Stamp=NS(GetNextColumnId=self.next_id)
