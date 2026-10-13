@@ -6,7 +6,7 @@ from types import SimpleNamespace as NS
 from unittest.mock import patch
 import tooling as V
 
-FONT=dict(FontName='GOST type A',Height=3.5,WidthFactor=1.0,Italic=True,Bold=False,Underline=False,Color=0)
+FONT=dict(FontName='GOST type A',Height=5.0,WidthFactor=1.0,Italic=True,Bold=False,Underline=False,Color=0)
 
 
 class Sheet:
@@ -64,8 +64,9 @@ class Rows(unittest.TestCase):
             self.assertEqual(V.write('x',data,data['entries']),2)
         cells=env.sheets[2].cells
         self.assertEqual([cells.get(c,('',))[0].strip() for c in range(3456,3461)],
-                         ['Мерительная','Калибр-скоба @2~11f7','','Режущая','Пластина WNMG 160808'])
+                         ['Режущая','Пластина WNMG 160808','','Мерительная','Калибр-скоба @2~11f7'])
         self.assertTrue(cells[3456][1]['Bold']);self.assertFalse(cells[3457][1]['Bold'])
+        self.assertTrue(all(cells[c][1]['Height']==3.5 for c in (3456,3457,3459,3460)))
         self.assertEqual(cells[3440][0],'Мерительная')  # other cells untouched
         self.assertFalse(any(sheet==3 for sheet,*_ in env.writes))  # nothing for the empty 2nd page
 
@@ -97,7 +98,7 @@ class Rows(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder,env.patch(folder):
             data=V.read('x',[20],[2]);count,note=V.write('x',data,data['entries'])
         self.assertEqual(count,2);self.assertIn('3',note)
-        self.assertEqual(env.sheets[2].cells[3456][0],'Мерительная')
+        self.assertEqual(env.sheets[2].cells[3456][0],'Режущая')
 
     def test_changed_rows_block_write(self):
         env=Env()

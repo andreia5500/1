@@ -215,6 +215,27 @@ class ToolingTests(unittest.TestCase):
         self.assertIn('style',V.first_difference(a,b))
         self.assertIn('отсутствует',V.first_difference([],b))
 
+    def test_route_code_without_space(self):
+        # МК листы 6/7 (13.10): 'ТШабер…', 'О1. …', строка операции без 'А'.
+        rows=['А 020 Слесарная','О      Снять заусенцы','ТШабер Mango II комплект Е 155-90065, Надфили ГОСТ 1513-77',
+              'А 025 Контроль','                030      Шлифовальная ЧПУ   1,1','Т      Круг абразивный 1300-25-127 25А60 J V 35m/sB',
+              '                045    Покрытие Хим. Нб. 35','О1. Упаковать детали в тару.','Токарная обработка']
+        self.assertEqual(V.route_tools(rows)[0],['Шабер Mango II комплект Е 155-90065, Надфили ГОСТ 1513-77',
+                                                 'Круг абразивный 1300-25-127 25А60 J V 35m/sB'])
+
+    def test_two_tools_without_separator_are_split(self):
+        self.assertEqual(V.split_tools('Державка резьбовая SER 1616 H16 Резьбонарезная пластина AG60 ER16'),
+                         ['Державка резьбовая SER 1616 H16','Резьбонарезная пластина AG60 ER16'])
+        self.assertEqual(V.split_tools('Круг абразивный 1300-25-127 25А60 J V 35m/sB'),['Круг абразивный 1300-25-127 25А60 J V 35m/sB'])
+        self.assertEqual(V.split_tools('Сверло центровочное 1X5X2X35'),['Сверло центровочное 1X5X2X35'])
+
+    def test_group_order_cutting_grinding_fitter_measuring(self):
+        entries=[dict(text=t,group=g) for t,g in [('Микрометр',V.GROUPS[0]),('Очки',V.GROUPS[2]),('Круг',V.GROUPS[3]),
+                                                   ('Резец',V.GROUPS[1]),('Тиски',V.GROUPS[4])]]
+        data=dict(pages=[dict(capacity=40)],limit=60)
+        heads=[r['text'] for r in V.plan(data,entries)[0] if r['heading']]
+        self.assertEqual(heads,['Режущая','Шлифовальная','Слесарная','Мерительная','Приспособления'])
+
     def test_ke_wrapped_model_is_one_position(self):
         rows=['Сверло твердосплавное','WPC-UNI.4,5.R.3D.DIN6535. HB TIALN','','Пластина CCMT 060202']
         self.assertEqual(V.joined_instruments(rows),['Сверло твердосплавное WPC-UNI.4,5.R.3D.DIN6535. HB TIALN','Пластина CCMT 060202'])

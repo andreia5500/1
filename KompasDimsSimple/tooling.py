@@ -19,7 +19,14 @@ FONT=('FontName','Height','WidthFactor','Italic','Bold','Underline','Color')
 PROPS=('Align','IndentedLine','LeftEdge','RightEdge','Step','StepAfterParagraph','StepBeforeParagraph')
 IGNORE=('обеспеч.', 'обеспечивается', 'выбрать меритель')
 MEASURE=re.compile(r'штанген|микрометр|нутромер|калибр|профилометр|индикатор|кругломер|твердомер|прибор измерения|угломер|линейка|рулетка|щуп|скоба',re.I)
-START=re.compile(r'^(?:штанген|микрометр|нутромер|калибр|профилометр|индикатор|кругломер|твердомер|прибор|угломер|линейка|рулетка|щуп|скоба|державка|резец|пластина|сверл|фрез|метчик|развертк|зенкер|цанг|втулк|тиски|патрон|шабер|надфил|круг|очки|перчат|щетк|совок|рольганг|обеспеч|выбрать)',re.I)
+# Order of groups in the MK VO list (user's rule): cutting, grinding,
+# fitter's, measuring, then fixtures and the rest.
+ORDER=('Режущая','Шлифовальная','Слесарная','Мерительная','Приспособления','Прочая оснастка')
+# Route-card row code. KOMPAS rows often have no space after it:
+# 'ТШабер Mango…', 'О1. Упаковать…'; a word like 'Токарная' is not a code.
+CODE=re.compile(r'^\s*(?:([А-ЯA-Z])(?:\s|\x01)+|([АБКМОТ])(?=[А-ЯЁA-Z0-9]))')
+OPERATION=re.compile(r'^\s*\d{3}\s')  # operation line without its 'А' code
+START=re.compile(r'^(?:резьбонарезн|штанген|микрометр|нутромер|калибр|профилометр|индикатор|кругломер|твердомер|прибор|угломер|линейка|рулетка|щуп|скоба|державка|резец|пластина|сверл|фрез|метчик|развертк|зенкер|цанг|втулк|тиски|патрон|шабер|надфил|круг|очки|перчат|щетк|совок|рольганг|обеспеч|выбрать)',re.I)
 
 
 def clean(s):
@@ -48,7 +55,17 @@ def split_tools(s):
         elif depth==0 and (ch==';' or ch==',' and not (i and i+1<len(s) and s[i-1].isdigit() and s[i+1].isdigit()) or ch=='/' and START.match(X.display(s[i+1:].lstrip()))):
             out.append(s[start:i]);start=i+1
     out.append(s[start:])
-    return [clean(t).rstrip(' .') for t in out if clean(t).rstrip(' .') and not key(t).startswith(IGNORE)]
+    # Two tools written without a separator: 'Державка … H16 Резьбонарезная
+    # пластина AG60' — split before a capitalised word that starts a tool name.
+    parts=[]
+    for piece in out:
+        words=re.split(r'(\s+)',piece);current=''
+        for w in words:
+            if current.strip() and w[:1].isupper() and re.match('[А-ЯЁ][а-яё]',w) and START.match(w):
+                parts.append(current);current=w
+            else:current+=w
+        parts.append(current)
+    return [clean(t).rstrip(' .') for t in parts if clean(t).rstrip(' .') and not key(t).startswith(IGNORE)]
 
 
 def text_lines(stamp,cid):
@@ -83,7 +100,7 @@ def column_ids(stamp):
 # CDW records 0x4D80/0x4D81/0x4D90 = 0x4000 + 3456/3457/3472.
 ROW_IDS={200:tuple(range(3456,3473)),24:tuple(range(3456,3473))}
 ROW_FONT=dict(FontName='GOST type A',Height=3.5,WidthFactor=1.0,Italic=True,Bold=False,Underline=False,Color=0)
-ROW_LIMIT=60  # characters per row before wrapping onto the next row
+ROW_LIMIT=85  # ~100 characters fit a row on the sheet (13.10.2026 screenshot)
 
 
 MISSING_2000=('Графы 2000 нет в оформлении листа %d (%s, стиль %s): КОМПАС хранит текст, '
@@ -121,10 +138,10 @@ def joined_instruments(rows):
 def route_tools(lines,active=False,pending='',final=True):
     out=[]
     for raw in lines:
-        m=re.match(r'^\s*([АБВГДЕЖЗИКЛМНОПРСТУФХЦЧШЩЭЮЯA-Z])(?:\s|\x01)+',raw)
-        if m:
+        m=CODE.match(raw)
+        if m or OPERATION.match(raw):
             if pending:out.append(pending);pending=''
-            active=m.group(1) in ('Т','T')
+            active=bool(m) and (m.group(1) or m.group(2)) in ('Т','T')
             if active:pending=raw[m.end():]
         elif active and raw.strip():pending+=' '+raw
     if pending and final:out.append(pending);pending=''
@@ -153,7 +170,7 @@ def collect(doc,module,path,selected):
             if not any(clean(s) for s in rows):
                 mb,cb,n=(3306,3322,14) if style==21 else (3338,3355,17)
                 rows=[(' '.join(get(mb+i))+' '+' '.join(get(cb+i))).strip() for i in range(n)]
-            if rows and clean(rows[0]) and not re.match(r'^\s*[А-ЯA-Z](?:\s|\x01)+',rows[0]) and previous!=index-1:
+            if rows and clean(rows[0]) and not CODE.match(rows[0]) and not OPERATION.match(rows[0]) and previous!=index-1:
                 warnings.append('Лист %d начинается продолжением строки. Выберите также предыдущий лист МК.'%(index+1))
             contiguous=previous==index-1
             old_refs=list(carry_refs) if contiguous else []
@@ -297,7 +314,7 @@ def read_rows(doc,module,desc,targets,entries,snapshots,warnings):
             if not text:continue
             if text.rstrip(':').casefold() in HEADINGS:group_names.setdefault(HEADINGS[text.rstrip(':').casefold()],text.rstrip(':'))
             elif font is None and cell['font']:font=dict(cell['font'])
-    font=dict(font or ROW_FONT,Bold=False)
+    font=dict(font or ROW_FONT,Bold=False,Height=3.5)  # user's rule: 3.5 mm
     J.event('Построчная ведомость МК ВО',targets=[p['index']+1 for p in pages],ids=[ROW_IDS[desc[p['index']][1]] for p in pages],
             font=font,pages=pages)
     return dict(mode='rows',count=int(doc.LayoutSheets.Count),sources=snapshots,pages=pages,entries=entries,
@@ -404,7 +421,7 @@ def plan(data,entries):
         if k not in unique:unique[k]=e
     entries=list(unique.values())
     groups=[]
-    for group in GROUPS:
+    for group in ORDER:
         values=[];seen=set()
         for e in entries:
             if e['group']!=group:continue
