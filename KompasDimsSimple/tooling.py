@@ -393,9 +393,11 @@ def native_styles(mod5,k5,array):
             item=X._text_item_param(k5);item.Init()
             X.check_result(items.ksGetArrayItem(j,item),'чтение компоненты образца')
             if int(item.type)==0:texts.append(str(item.s or ''))
-            f=item.GetItemFont();bits=int(f.bitvector)
-            font=dict(FontName=str(f.fontName),Height=float(f.height),WidthFactor=float(f.ksu),
-                      Color=int(f.color),Italic=bool(bits&0x40),Bold=bool(bits&0x100),Underline=bool(bits&0x400))
+            # ksTextItemFont spells its properties as in the type library
+            # (bitVector, not bitvector); gen_py lookups are case-sensitive.
+            f=item.GetItemFont();g=lambda name:X.get_prop(f,name);bits=int(g('bitvector'))
+            font=dict(FontName=str(g('fontName')),Height=float(g('height')),WidthFactor=float(g('ksu')),
+                      Color=int(g('color')),Italic=bool(bits&0x40),Bold=bool(bits&0x100),Underline=bool(bits&0x400))
             components.append(dict(text=str(item.s or ''),type=int(item.type),font=font,flags=bits))
         result.append(dict(text=''.join(texts),style=int(line.style),items=components))
     return result

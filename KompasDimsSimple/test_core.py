@@ -54,6 +54,17 @@ class Tests(unittest.TestCase):
         f=N();p=N(GetItemFont=lambda:f,SetItemFont=lambda f:1)
         X.set_font(p,dict(FontName='GOST type A',Height=3.5,WidthFactor=.8,Color=0,Italic=True,Bold=False,Underline=False))
         self.assertEqual(f.bitvector,0x40|0x200|0x800);self.assertEqual(f.height,3.5)
+    def test_font_props_case_insensitive(self):
+        # Реальный ksTextItemFont: bitVector/fontName, gen_py чувствителен к регистру.
+        class Font:
+            _prop_map_get_={'bitVector':0,'fontName':0,'height':0,'ksu':0,'color':0}
+            _prop_map_put_=_prop_map_get_
+            def __init__(self):self.__dict__.update(bitVector=0x2,fontName='',height=0,ksu=1,color=0)
+        f=Font();p=N(GetItemFont=lambda:f,SetItemFont=lambda f:1)
+        self.assertEqual(X.get_prop(f,'bitvector'),0x2)
+        X.set_font(p,dict(FontName='GOST type A',Height=3.5,Bold=True))
+        self.assertEqual(f.bitVector,0x2|0x100);self.assertEqual(f.fontName,'GOST type A')
+        self.assertFalse(hasattr(f,'bitvector'))
     def test_explicit_sheet(self):
         seen=[]
         stamp=N(ksOpenStamp=lambda:1,ksColumnNumber=lambda i:seen.append(i) or 1,ksTextLine=lambda p:seen.append(p.s) or 1,ksCloseStamp=lambda:1)

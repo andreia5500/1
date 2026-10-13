@@ -133,19 +133,33 @@ def check_result(result, operation):
         raise RuntimeError('КОМПАС отказал: ' + operation)
 
 
+def prop_name(obj, name, mapping='_prop_map_get_'):
+    """COM property name as spelled by the type library (e.g. bitVector)."""
+    names = list(getattr(obj, mapping, {}) or {}) + [n for n in dir(obj) if not n.startswith('_')]
+    return next((k for k in names if k.casefold() == name.casefold()), name)
+
+
+def get_prop(obj, name, default=None):
+    """Case-insensitive property read: gen_py classes are case-sensitive."""
+    try:
+        return getattr(obj, prop_name(obj, name))
+    except AttributeError:
+        if default is not None:
+            return default
+        raise
+
+
 def set_font(param, font):
     if not font:
         return
     ft = param.GetItemFont()
     def put(name, value):
-        mapping = getattr(ft, '_prop_map_put_', {})
-        key = next((k for k in mapping if k.casefold() == name.casefold()), name)
-        setattr(ft, key, value)
+        setattr(ft, prop_name(ft, name, '_prop_map_put_'), value)
     for old, new in [('FontName','fontName'), ('Height','height'), ('WidthFactor','ksu'), ('Color','color')]:
         if old in font:
             put(new, font[old])
     # SDK textflags: explicit ON/OFF, never fraction/index low bits.
-    flags = int(K.get(ft, 'bitvector', 0))
+    flags = int(get_prop(ft, 'bitvector', 0) or 0)
     for name, on, off in [('Italic', 0x40, 0x80), ('Bold', 0x100, 0x200), ('Underline', 0x400, 0x800)]:
         if name in font:
             flags = (flags & ~(on | off)) | (on if font[name] else off)
