@@ -46,7 +46,8 @@ class App(tk.Tk):
         for i,button in enumerate((self.transfer_button,
                 ttk.Button(actions,text='Допуски на эскизе…',command=self.open_sketch),
                 ttk.Button(actions,text='Ведомость оснастки…',command=self.open_tooling),
-                ttk.Button(actions,text='Нумерация листов…',command=self.open_numbering))):
+                ttk.Button(actions,text='Нумерация листов…',command=self.open_numbering),
+                ttk.Button(actions,text='Проверка УП…',command=self.open_nc_checker))):
             actions.columnconfigure(i,weight=1,uniform='actions');button.grid(row=0,column=i,sticky='ew',padx=(0 if i==0 else 8,0))
         heading=ttk.Frame(self);heading.pack(fill='x',padx=16)
         ttk.Label(heading,text='2. Размеры и допуски',style='Heading.TLabel').pack(side='left')
@@ -244,6 +245,17 @@ class App(tk.Tk):
         from tooling_dialog import ToolingWindow
         path=filedialog.askopenfilename(parent=self,title='ТП для ведомости оснастки',filetypes=[('ТП КОМПАС','*.cdw')])
         if path:self.run(lambda:X.sheet_list(path),lambda sheets:ToolingWindow(self,path,sheets),'Читаю названия листов ТП…')
+
+    def open_nc_checker(self):
+        # Время цикла и проверка УП (Diamond CSB, Mitsubishi) — автономная
+        # HTML-страница из DiamondCAM/Post, открывается в браузере.
+        import webbrowser
+        from pathlib import Path
+        page=Path(__file__).resolve().parent/'nc_checker.html'
+        if not page.exists():
+            messagebox.showerror('Проверка УП','Не найден файл nc_checker.html рядом с программой.',parent=self);return
+        J.event('Открыта проверка УП',page=str(page))
+        webbrowser.open(page.as_uri())
 
     def open_numbering(self):
         if self.busy:return
