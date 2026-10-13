@@ -1224,6 +1224,15 @@ def calculate(systems, subprograms, params=None):
     return sims, reconcile(sims)
 
 
+
+# Подпрограммы станка, встроенные в программу (как в DiamondCAM/Post):
+# вызываются из УП через M98 P5000/P5001/P5002.
+DEFAULT_SUBPROGRAMS = {
+    '5000': 'O5000\nG43.1\nS1=2000M13\nT0101G99G0Y0.\nW-0.1\nX45.\nW0.1\nG1X-1.0F0.1\nM5\nM9\n(M87)\nM99\n',
+    '5001': 'O5001\nM35\nG4X1.\nT0101G99G0X45.Y0.\nG98G1W-50.F2000\nM85\nM34\nG4X1.\nM84\nM35\nM86\nG4X1.\nG98G1W50.F2000\nG43.1\nS1=2000M13\nT0202G99G0X45.Y0.Z0.(T0202)\nG1X-1.5F0.075\nM5\nM87\nM34\nG4X1.\nM15\nM99\n',
+    '5002': 'O5002\nM34\nG4X.75\nIF[#1000EQ1]GOTO3\nN2\nT0101G99G0Z0.0\nG4X.75\nM35\nG4X0.5\nZ-1.\nS1=2000M13\nG0X45.Z-1.0\nM99\nN3\nM98P5001\nGOTO2\n',
+}
+
 # ---------------------------------------------------------------- проверка кода
 
 KNOWN_G_CODES = {

@@ -47,6 +47,27 @@ def merge(base, extra):
             base[key] = value
 
 
+def library_path():
+    return X.backup_folder() / 'nc_subprograms.json'
+
+
+def load_library():
+    """Постоянная библиотека подпрограмм: встроенные O5000-O5002 + добавленные пользователем."""
+    try:
+        data = json.loads(library_path().read_text(encoding='utf-8'))
+        return {no: dict(text=v['text'], file=v.get('file') or '', source=v.get('source') or 'библиотека') for no, v in data.items()}
+    except (OSError, ValueError, KeyError, TypeError):
+        return builtin_subs()
+
+
+def builtin_subs():
+    return {no: dict(text=t, file='', source='встроенная') for no, t in E.DEFAULT_SUBPROGRAMS.items()}
+
+
+def save_library(subs):
+    library_path().write_text(json.dumps(subs, ensure_ascii=False, indent=1), encoding='utf-8')
+
+
 def save_params(params):
     params_path().write_text(json.dumps(params, ensure_ascii=False, indent=2), encoding='utf-8')
 
@@ -112,7 +133,7 @@ class NcWindow(tk.Toplevel):
         super().__init__(app)
         self.app = app
         self.params = load_params()
-        self.subs = {}          # номер -> dict(text, file)
+        self.subs = load_library()   # номер -> dict(text, file, source)
         self.last_dir = None
         self.sims = []
         U.window(self, 'Проверка УП', 1360, 880, 1100, 680)
@@ -125,7 +146,7 @@ class NcWindow(tk.Toplevel):
         ttk.Button(bar, text='Полная проверка кода', command=self.check).pack(side='right', padx=8)
         ttk.Button(bar, text='Закрыть', command=self.destroy).pack(side='right', padx=(0, 8))
         U.journal_button(bar, self).pack(side='left')
-        self.status = tk.StringVar(value='Шаг 1: откройте программы систем S1 и S2 (подпрограммы M98 подгружаются из той же папки). '
+        self.status = tk.StringVar(value='Шаг 1: откройте программы систем S1 и S2 (подпрограммы O5000–O5002 встроены, остальные M98 подгружаются из папки УП). '
                                          'Шаг 2: «Рассчитать время цикла» или «Полная проверка кода».')
         ttk.Label(self, textvariable=self.status, style='Muted.TLabel').pack(side='bottom', fill='x', padx=16)
         panes = ttk.Panedwindow(self, orient='horizontal')
@@ -171,19 +192,23 @@ class NcWindow(tk.Toplevel):
         tools.pack(fill='x', pady=(0, 6))
         ttk.Button(tools, text='Добавить файлы…', style='Accent.TButton', command=self.add_subs).pack(side='left')
         ttk.Button(tools, text='Удалить', command=self.remove_sub).pack(side='left', padx=8)
-        ttk.Label(page, text='Номер берётся из строки «O5000» в начале файла или из имени файла.', style='Muted.TLabel').pack(anchor='w', pady=(0, 6))
+        ttk.Button(tools, text='Вернуть встроенные', command=self.restore_builtin).pack(side='left')
+        ttk.Label(page, text='Библиотека постоянная: подпрограммы сохраняются и доступны при каждом запуске. '
+                  'O5000–O5002 встроены. Номер — из строки «O5000» или имени файла.', style='Muted.TLabel',
+                  wraplength=560).pack(anchor='w', pady=(0, 6))
         body = ttk.Panedwindow(page, orient='vertical')
         body.pack(fill='both', expand=True)
         frame = ttk.Frame(body)
         body.add(frame, weight=1)
         self.sub_table = ttk.Treeview(frame, columns=('num', 'file', 'lines'), show='headings', height=5)
-        for c, t, w in (('num', 'Номер', 90), ('file', 'Файл', 300), ('lines', 'Строк', 70)):
+        for c, t, w in (('num', 'Номер', 90), ('file', 'Источник', 300), ('lines', 'Строк', 70)):
             self.sub_table.heading(c, text=t)
             self.sub_table.column(c, width=w, stretch=c == 'file', anchor='w' if c == 'file' else 'center')
         U.table_scroll(self.sub_table)
         self.sub_table.bind('<<TreeviewSelect>>', lambda e: self.show_sub())
         self.sub_view = CodeEditor(body)
         body.add(self.sub_view, weight=2)
+        self.refresh_subs()
 
     def open_program(self, sys):
         path = filedialog.askopenfilename(parent=self, title='Программа %s' % sys['name'], filetypes=NC_TYPES,
@@ -220,7 +245,7 @@ class NcWindow(tk.Toplevel):
         found, missing, queue = [], [], self.called_subs(text)
         while queue:
             no = queue.pop(0)
-            if no in self.subs or no in found or no in missing:
+            if no in self.subs or no in found or no in missing:  # уже в библиотеке
                 continue
             match = None
             for f in sorted(folder.iterdir()):
@@ -229,11 +254,13 @@ class NcWindow(tk.Toplevel):
                     break
             if match:
                 sub_text = read_nc(match)
-                self.subs[no] = dict(text=sub_text, file=str(match))
+                self.subs[no] = dict(text=sub_text, file=str(match), source='из папки УП')
                 found.append(no)
                 queue.extend(self.called_subs(sub_text))
             else:
                 missing.append(no)
+        if found:
+            save_library(self.subs)
         self.refresh_subs()
         return found, missing
 
@@ -246,22 +273,33 @@ class NcWindow(tk.Toplevel):
             if no is None:
                 bad.append(Path(path).name)
                 continue
-            self.subs[no] = dict(text=text, file=path)
+            self.subs[no] = dict(text=text, file=path, source='добавлена')
+        save_library(self.subs)
         self.refresh_subs()
         if bad:
             messagebox.showwarning('Подпрограммы', 'Не удалось определить номер (нужна строка «O5000»):\n' + '\n'.join(bad), parent=self)
 
     def remove_sub(self):
-        for item in self.sub_table.selection():
+        sel = self.sub_table.selection()
+        if not sel or not messagebox.askyesno('Подпрограммы', 'Удалить из библиотеки: %s?' % ', '.join('O' + n for n in sel), parent=self):
+            return
+        for item in sel:
             self.subs.pop(item, None)
+        save_library(self.subs)
         self.refresh_subs()
+
+    def restore_builtin(self):
+        self.subs.update(builtin_subs())
+        save_library(self.subs)
+        self.refresh_subs()
+        self.status.set('Встроенные подпрограммы O5000–O5002 восстановлены.')
 
     def refresh_subs(self):
         self.sub_table.delete(*self.sub_table.get_children())
         for i, no in enumerate(sorted(self.subs, key=lambda n: int(n) if n.isdigit() else 0)):
             s = self.subs[no]
             self.sub_table.insert('', 'end', iid=no, tags=('stripe',) if i % 2 else (),
-                                  values=('O' + no, Path(s['file']).name, s['text'].count('\n') + 1))
+                                  values=('O' + no, s['source'] + (' · ' + Path(s['file']).name if s['file'] else ''), s['text'].count('\n') + 1))
         self.book.tab(2, text='Подпрограммы · %d' % len(self.subs))
 
     def show_sub(self):
