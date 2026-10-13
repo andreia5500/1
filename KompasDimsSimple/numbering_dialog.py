@@ -8,7 +8,7 @@ class NumberingWindow(tk.Toplevel):
     def __init__(self,app,path,data):
         super().__init__(app);self.app,self.path,self.data=app,path,data
         U.window(self,'Нумерация листов',1000,700,850,500);self.transient(app);self.grab_set()
-        U.header(self,'Номер листа в документе',path)
+        U.header(self,'Номер листа в документе',path,icon='pages')
         bar=ttk.Frame(self);bar.pack(side='bottom',fill='x',padx=16,pady=(8,12))
         self.send=ttk.Button(bar,text='Записать номера',command=self.write,style='Accent.TButton');self.send.pack(side='right')
         ttk.Button(bar,text='Закрыть',command=self.destroy).pack(side='right',padx=10)

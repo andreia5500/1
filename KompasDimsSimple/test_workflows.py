@@ -20,7 +20,7 @@ class Var:
 class WorkflowTests(unittest.TestCase):
     def worker_app(self):
         return NS(busy=False,status=Var(),events=queue.Queue(),configure=lambda **kw:None,
-                  progress=NS(start=lambda _:None,stop=lambda:None),after=lambda *args:None,
+                  progress=NS(start=lambda _:None,stop=lambda:None,pack=lambda **kw:None,pack_forget=lambda:None),after=lambda *args:None,
                   poll=lambda:None,callback_error=lambda *args:self.fail('Unexpected UI exception'))
 
     def test_background_success_balances_com_and_delivers_callback(self):

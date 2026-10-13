@@ -17,7 +17,7 @@ class SketchWindow(tk.Toplevel):
         self.data=None;self.checked=set()
         U.window(self,'Допуски на эскизе · КЭ ЧПУ',1240,760,960,600);self.transient(app);self.grab_set()
         self.protocol('WM_DELETE_WINDOW',self.close)
-        U.header(self,'Допуски на эскизе',path)
+        U.header(self,'Допуски на эскизе',path,icon='sketch')
         buttons=ttk.Frame(self);buttons.pack(side='bottom',fill='x',padx=16,pady=(8,12))
         self.send=ttk.Button(buttons,text='Проставить допуски',command=self.write,state='disabled',style='Accent.TButton');self.send.pack(side='right')
         ttk.Button(buttons,text='Закрыть',command=self.close).pack(side='right',padx=10)

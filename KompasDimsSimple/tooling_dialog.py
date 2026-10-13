@@ -13,7 +13,7 @@ class ToolingWindow(tk.Toplevel):
         self.data=None;self.entries=[];self.checked=set();self.planned=None
         U.window(self,'Ведомость оснастки · МК ВО',1240,850,960,680);self.transient(app);self.grab_set()
         self.protocol('WM_DELETE_WINDOW',self.close)
-        U.header(self,'Ведомость оснастки',path)
+        U.header(self,'Ведомость оснастки',path,icon='tools')
         # Reserve the action/status area before the resizable middle panes.
         bar=ttk.Frame(self);bar.pack(side='bottom',fill='x',padx=16,pady=(8,12))
         self.send=ttk.Button(bar,text='Записать в МК ВО',command=self.write,state='disabled',style='Accent.TButton');self.send.pack(side='right')

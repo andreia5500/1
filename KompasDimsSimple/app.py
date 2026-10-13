@@ -19,41 +19,151 @@ import ui as U
 
 
 class App(tk.Tk):
+    # Модули в порядке работы технолога: (ключ, значок, название, описание, этап).
+    MODULES=(
+        ('dims','drawing','Размеры с чертежа','Считать размеры, допуски, шероховатость и допуски формы с чертежа КОМПАС. Подобрать мерительный инструмент.','Чертёж → ТП'),
+        ('transfer','card','Карта контроля','Перенести отмеченные размеры в карты контроля ОК ТК с группировкой по видам и мерителям.','Чертёж → ТП'),
+        ('sketch','sketch','Допуски на эскизе','Проставить допуски на размеры эскизов КЭ ЧПУ по чертежу и общим допускам.','Чертёж → ТП'),
+        ('tooling','tools','Ведомость оснастки','Собрать инструмент из МК, ОК ТК и КЭ ЧПУ и записать ведомость МК ВО.','Оформление ТП'),
+        ('numbering','pages','Нумерация листов','Проставить номера листов внутри каждого документа техпроцесса.','Оформление ТП'),
+        ('nc','nc','Проверка УП','Время цикла по системам станка и полная проверка кода на ошибки — имитация Diamond CSB.','Программы ЧПУ'),
+    )
+
     def __init__(self):
         super().__init__()
         U.theme(self)
-        U.window(self,'Размеры → ТП · '+J.VERSION,1240,800,950,640)
+        U.window(self,U.APP_NAME+' · '+J.VERSION,1320,840,1080,680)
         J.event('Запуск программы',**J.runtime())
         self.report_callback_exception=self.callback_error
         self.protocol('WM_DELETE_WINDOW',self.close)
         self.dims, self.geoms, self.checked = [], {}, set()
         self.busy = False
         self.events = queue.Queue()
-        self.status = tk.StringVar(value='1. Откройте чертёж. 2. Отметьте размеры. 3. Перенесите в ТП.')
-        header=U.header(self,'Размеры → ТП','Размеры, допуски и инструмент — в выбранные листы техпроцесса.')
-        U.journal_button(header,self).pack(side='right')
-        source=ttk.LabelFrame(self,text='1. Чертёж',padding=12);source.pack(fill='x',padx=16,pady=(4,12))
+        self.status = tk.StringVar(value='Выберите модуль. Порядок работы — сверху вниз по левой панели.')
+        self.nav_buttons={}
+        self.build_sidebar()
+        content=ttk.Frame(self);content.pack(side='left',fill='both',expand=True)
+        footer=ttk.Frame(content,padding=(16,7,16,8));footer.pack(side='bottom',fill='x')
+        self.progress=ttk.Progressbar(footer,mode='indeterminate',length=120)  # показывается только во время операции
+        status=ttk.Label(footer,textvariable=self.status,style='Muted.TLabel',wraplength=1000)
+        status.pack(side='left',fill='x',expand=True)
+        footer.bind('<Configure>',lambda e:status.configure(wraplength=max(300,e.width-170)))
+        tk.Frame(content,background=U.LINE,height=1).pack(side='bottom',fill='x')
+        self.pages={}
+        self.pages['home']=self.build_home(content)
+        self.pages['dims']=self.build_dims(content)
+        self.show('home')
+        self.after(80,self.poll)
+
+    # ------------------------------------------------------------ навигация
+    def build_sidebar(self):
+        side=tk.Frame(self,background=U.NAVY,width=250);side.pack(side='left',fill='y');side.pack_propagate(False)
+        brand=tk.Frame(side,background=U.NAVY);brand.pack(fill='x',padx=16,pady=(18,14))
+        logo=tk.Canvas(brand,width=44,height=44,background=U.NAVY,highlightthickness=0);logo.pack(side='left')
+        U.draw_icon(logo,'logo',22,22,40,U.PRINT_LINE,U.NAVY)
+        names=tk.Frame(brand,background=U.NAVY);names.pack(side='left',padx=10)
+        tk.Label(names,text='Технолог',background=U.NAVY,foreground=U.NAVY_TEXT,font=(U.UI_FONT,16,'bold')).pack(anchor='w')
+        tk.Label(names,text='версия 2.0',background=U.NAVY,foreground=U.NAVY_MUTED,font=(U.UI_FONT,9)).pack(anchor='w')
+        tk.Frame(side,background=U.NAVY_2,height=1).pack(fill='x',padx=12,pady=(0,8))
+        self.nav_item(side,'home','Главная',self.go_home)
+        stage=None
+        for i,(key,icon,title,text,group) in enumerate(self.MODULES,1):
+            if group!=stage:
+                stage=group
+                tk.Label(side,text=group.upper(),background=U.NAVY,foreground=U.NAVY_MUTED,font=(U.UI_FONT,8,'bold')).pack(anchor='w',padx=20,pady=(14,3))
+            self.nav_item(side,key,'%d   %s'%(i,title),lambda k=key:self.open_module(k))
+        bottom=tk.Frame(side,background=U.NAVY);bottom.pack(side='bottom',fill='x',padx=12,pady=14)
+        U.journal_button(bottom,self,'Banner.TButton').pack(fill='x')
+        tk.Label(bottom,text='Технолог 2.0 · сборка '+J.VERSION,background=U.NAVY,foreground=U.NAVY_MUTED,font=(U.UI_FONT,8)).pack(anchor='w',pady=(8,0))
+
+    def nav_item(self,parent,key,text,command):
+        button=ttk.Button(parent,text=text,command=command,style='Nav.TButton')
+        button.pack(fill='x',padx=8,pady=1);self.nav_buttons[key]=button
+
+    def show(self,name):
+        for key,page in self.pages.items():
+            if key==name:page.pack(fill='both',expand=True)
+            else:page.pack_forget()
+        for key,button in self.nav_buttons.items():
+            button.configure(style='NavActive.TButton' if key==name else 'Nav.TButton')
+        self.page=name
+
+    def go_home(self):
+        self.show('home');self.status.set('Выберите модуль. Порядок работы — сверху вниз по левой панели.')
+
+    def open_module(self,key):
+        if self.busy:return
+        if key=='dims':
+            self.show('dims')
+            if not self.dims:self.status.set('Шаг 1: откройте чертёж КОМПАС.')
+        elif key=='transfer':
+            if not self.dims:
+                self.show('dims');self.status.set('Для карты контроля сначала откройте чертёж и отметьте размеры.');return
+            self.show('dims');self.open_transfer()
+        elif key=='sketch':self.open_sketch()
+        elif key=='tooling':self.open_tooling()
+        elif key=='numbering':self.open_numbering()
+        elif key=='nc':self.open_nc_checker()
+
+    # ------------------------------------------------------------ главная
+    def build_home(self,parent):
+        page=ttk.Frame(parent)
+        canvas=tk.Canvas(page,highlightthickness=0,background=U.PRINT_BG);canvas.pack(fill='both',expand=True)
+        cards=[self.module_card(canvas,i,*m) for i,m in enumerate(self.MODULES,1)]
+        def layout(event=None):
+            w,h=max(canvas.winfo_width(),900),max(canvas.winfo_height(),560)
+            U.blueprint(canvas,w,h)
+            canvas.delete('hero')
+            canvas.create_text(64,62,text=U.APP_NAME,anchor='w',fill='#FFFFFF',font=(U.UI_FONT,30,'bold'),tags='hero')
+            canvas.create_text(66,104,text='Технологическая подготовка производства: от чертежа до управляющей программы',
+                               anchor='w',fill=U.PRINT_TEXT,font=(U.UI_FONT,12),tags='hero')
+            canvas.create_text(66,130,text='Работайте по шагам 1 → 6. Каждый модуль показывает план перед записью и проверяет результат.',
+                               anchor='w',fill=U.PRINT_LINE,font=(U.UI_FONT,10),tags='hero')
+            cols=3;gap=18;left=60;top=170
+            card_w=min(330,(w-left*2-gap*(cols-1))//cols);card_h=186
+            for i,card in enumerate(cards):
+                x=left+(i%cols)*(card_w+gap);y=top+(i//cols)*(card_h+gap)
+                canvas.coords(card._item,x,y);canvas.itemconfigure(card._item,width=card_w,height=card_h)
+                card._text.configure(wraplength=card_w-36)
+            canvas.tag_raise('card')
+        canvas.bind('<Configure>',layout)
+        return page
+
+    def module_card(self,canvas,number,key,icon,title,text,group):
+        card=tk.Frame(canvas,background=U.PAPER,highlightthickness=1,highlightbackground='#3D6798',cursor='hand2')
+        card._item=canvas.create_window(0,0,window=card,anchor='nw',tags='card')
+        top=tk.Frame(card,background=U.PAPER);top.pack(fill='x',padx=16,pady=(14,6))
+        mark=tk.Canvas(top,width=44,height=44,background='#EAF2FD',highlightthickness=0);mark.pack(side='left')
+        U.draw_icon(mark,icon,22,22,32,U.BLUE,'#EAF2FD')
+        names=tk.Frame(top,background=U.PAPER);names.pack(side='left',padx=12)
+        tk.Label(names,text='ШАГ %d · %s'%(number,group.upper()),background=U.PAPER,foreground=U.MUTED,font=(U.UI_FONT,8,'bold')).pack(anchor='w')
+        tk.Label(names,text=title,background=U.PAPER,foreground=U.NAVY,font=(U.UI_FONT,13,'bold')).pack(anchor='w')
+        bar=tk.Frame(card,background=U.PAPER);bar.pack(side='bottom',fill='x',padx=16,pady=(4,14))
+        card._text=tk.Label(card,text=text,background=U.PAPER,foreground=U.MUTED,font=(U.UI_FONT,9),justify='left',anchor='nw')
+        card._text.pack(fill='both',expand=True,padx=16)
+        ttk.Button(bar,text='Открыть',style='Accent.TButton',command=lambda:self.open_module(key)).pack(side='right')
+        def hover(on):card.configure(highlightbackground=U.BLUE if on else '#3D6798',highlightthickness=2 if on else 1)
+        for widget in (card,top,names,card._text,mark,bar)+tuple(names.winfo_children()):
+            widget.bind('<Button-1>',lambda e:self.open_module(key))
+        card.bind('<Enter>',lambda e:hover(True));card.bind('<Leave>',lambda e:hover(False))
+        return card
+
+    # ------------------------------------------------------------ размеры с чертежа
+    def build_dims(self,parent):
+        page=ttk.Frame(parent)
+        U.header(page,'Размеры с чертежа','Размеры, допуски и инструмент — в выбранные листы техпроцесса.',icon='drawing')
+        source=ttk.LabelFrame(page,text='1. Чертёж',padding=12);source.pack(fill='x',padx=16,pady=(12,10))
         ttk.Button(source,text='Открыть чертёж…',command=self.open_drawing,style='Accent.TButton').pack(side='left')
         self.file_label=ttk.Label(source,text='Чертёж не выбран',style='Muted.TLabel');self.file_label.pack(side='left',padx=16)
-        # Keep the workflow and status visible when the table grows.
-        footer=ttk.Frame(self,padding=(16,8,16,10));footer.pack(side='bottom',fill='x')
-        self.progress=ttk.Progressbar(footer,mode='indeterminate',length=105);self.progress.pack(side='right',padx=(12,0))
-        status=ttk.Label(footer,textvariable=self.status,style='Muted.TLabel',wraplength=1050)
-        status.pack(side='left',fill='x',expand=True)
-        footer.bind('<Configure>',lambda e:status.configure(wraplength=max(300,e.width-160)))
-        actions=ttk.LabelFrame(self,text='3. Работа с ТП',padding=12);actions.pack(side='bottom',fill='x',padx=16,pady=(8,0))
+        actions=ttk.LabelFrame(page,text='3. Перенос в ТП',padding=12);actions.pack(side='bottom',fill='x',padx=16,pady=(8,10))
         self.transfer_button=ttk.Button(actions,text='Карта контроля…',command=self.open_transfer,style='Accent.TButton',state='disabled')
-        for i,button in enumerate((self.transfer_button,
-                ttk.Button(actions,text='Допуски на эскизе…',command=self.open_sketch),
-                ttk.Button(actions,text='Ведомость оснастки…',command=self.open_tooling),
-                ttk.Button(actions,text='Нумерация листов…',command=self.open_numbering),
-                ttk.Button(actions,text='Проверка УП…',command=self.open_nc_checker))):
+        for i,button in enumerate((self.transfer_button,ttk.Button(actions,text='Допуски на эскизе…',command=self.open_sketch))):
             actions.columnconfigure(i,weight=1,uniform='actions');button.grid(row=0,column=i,sticky='ew',padx=(0 if i==0 else 8,0))
-        heading=ttk.Frame(self);heading.pack(fill='x',padx=16)
+        heading=ttk.Frame(page);heading.pack(fill='x',padx=16)
         ttk.Label(heading,text='2. Размеры и допуски',style='Heading.TLabel').pack(side='left')
         ttk.Button(heading,text='Снять отметки',command=lambda:self.mark_all(False)).pack(side='right')
         ttk.Button(heading,text='Отметить всё',command=lambda:self.mark_all(True)).pack(side='right',padx=8)
-        row=ttk.Frame(self,padding=(0,8,0,8));row.pack(fill='x',padx=16)
+        row=ttk.Frame(page,padding=(0,8,0,8));row.pack(fill='x',padx=16)
         ttk.Label(row,text='Неуказанные линейные допуски:').pack(side='left')
         self.mode = tk.StringVar(value='ГОСТ 30893.1')
         self.grade = tk.StringVar(value='m')
@@ -61,16 +171,16 @@ class App(tk.Tk):
         ttk.Label(row, text='Класс:').pack(side='left')
         gc=ttk.Combobox(row,textvariable=self.grade,values=['f','m','c','v'],width=3,state='readonly'); gc.pack(side='left',padx=5)
         cb.bind('<<ComboboxSelected>>',lambda e:self.recalc());gc.bind('<<ComboboxSelected>>',lambda e:self.recalc())
-        ttk.Label(self,text='Галочка — включить запись. Двойной щелчок — изменить размер, вид или меритель.',style='Muted.TLabel').pack(anchor='w',padx=16,pady=(0,8))
-        frame=ttk.Frame(self);frame.pack(fill='both',expand=True,padx=16)
+        ttk.Label(page,text='Галочка — включить запись. Двойной щелчок — изменить размер, вид или меритель.',style='Muted.TLabel').pack(anchor='w',padx=16,pady=(0,8))
+        frame=ttk.Frame(page);frame.pack(fill='both',expand=True,padx=16)
         self.table=ttk.Treeview(frame,columns=('use','dim','kind','source','view','instrument','note'),show='headings')
         for name,title,width in [('use','✓',35),('dim','Размер с допуском',220),('kind','Тип',95),('source','Допуск',70),('view','Вид',140),('instrument','Меритель',250),('note','Примечание',200)]:
             self.table.heading(name,text=title);self.table.column(name,width=width,stretch=name not in ('use','source'))
         U.table_scroll(self.table)
         self.table.bind('<Button-1>',self.toggle)
         self.table.bind('<Double-1>',self.edit)
-        ttk.Label(self,text='Индексы в таблице показаны в [скобках]; в КОМПАС передаётся штатное обозначение.',style='Muted.TLabel').pack(anchor='w',padx=16,pady=(6,0))
-        self.after(80,self.poll)
+        ttk.Label(page,text='Индексы в таблице показаны в [скобках]; в КОМПАС передаётся штатное обозначение.',style='Muted.TLabel').pack(anchor='w',padx=16,pady=(6,0))
+        return page
 
     def close(self):
         if self.busy:
@@ -80,7 +190,7 @@ class App(tk.Tk):
 
     def run(self, job, done, label, failed=None):
         if self.busy:return
-        self.busy=True;self.status.set(label);self.configure(cursor='watch');U.busy(self,True);self.progress.start(12)
+        self.busy=True;self.status.set(label);self.configure(cursor='watch');U.busy(self,True);self.progress.pack(side='right',padx=(12,0));self.progress.start(12)
         op_id=J.new_id()
         def worker():
             try:
@@ -102,7 +212,7 @@ class App(tk.Tk):
         try:
             while True:
                 done,result,error,op_id,failed=self.events.get_nowait()
-                self.busy=False;self.configure(cursor='');U.busy(self,False);self.progress.stop()
+                self.busy=False;self.configure(cursor='');U.busy(self,False);self.progress.stop();self.progress.pack_forget()
                 if error:
                     try:
                         with (X.backup_folder()/'error.log').open('a',encoding='utf-8') as log:
@@ -247,15 +357,9 @@ class App(tk.Tk):
         if path:self.run(lambda:X.sheet_list(path),lambda sheets:ToolingWindow(self,path,sheets),'Читаю названия листов ТП…')
 
     def open_nc_checker(self):
-        # Время цикла и проверка УП (Diamond CSB, Mitsubishi) — автономная
-        # HTML-страница из DiamondCAM/Post, открывается в браузере.
-        import webbrowser
-        from pathlib import Path
-        page=Path(__file__).resolve().parent/'nc_checker.html'
-        if not page.exists():
-            messagebox.showerror('Проверка УП','Не найден файл nc_checker.html рядом с программой.',parent=self);return
-        J.event('Открыта проверка УП',page=str(page))
-        webbrowser.open(page.as_uri())
+        if self.busy:return
+        from nc_dialog import NcWindow
+        NcWindow(self)
 
     def open_numbering(self):
         if self.busy:return
@@ -291,7 +395,7 @@ class TransferWindow(tk.Toplevel):
         self.block,self.pages=None,[]
         U.window(self,'Карта контроля',1240,760,960,600);self.transient(app);self.grab_set()
         self.protocol('WM_DELETE_WINDOW',self.close)
-        U.header(self,'Карта контроля',path)
+        U.header(self,'Карта контроля',path,icon='card')
         buttons=ttk.Frame(self);buttons.pack(side='bottom',fill='x',padx=16,pady=(8,12))
         self.send=ttk.Button(buttons,text='Записать в карту контроля',command=self.write,state='disabled',style='Accent.TButton');self.send.pack(side='right')
         ttk.Button(buttons,text='Закрыть',command=self.close).pack(side='right',padx=10)
