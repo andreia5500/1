@@ -125,11 +125,11 @@ final class EntityAdapter extends BaseAdapter {
     private TextView newHeader() {
         TextView t = new TextView(context);
         t.setTextColor(context.getResources().getColor(R.color.text_dim));
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        t.setTypeface(Ui.MEDIUM);
         t.setAllCaps(true);
-        t.setLetterSpacing(0.06f);
-        t.setPadding(dp(10), dp(18), dp(10), dp(6));
+        t.setLetterSpacing(0.14f);
+        t.setPadding(dp(4), dp(18), dp(4), dp(2));
         return t;
     }
 
@@ -144,7 +144,7 @@ final class EntityAdapter extends BaseAdapter {
         TextView b = text(18, R.color.text);
         b.setText(label);
         b.setGravity(Gravity.CENTER);
-        b.setBackgroundResource(R.drawable.chip);
+        b.setBackgroundResource(R.drawable.btn_small);
         b.setMinWidth(dp(44));
         b.setMinHeight(dp(40));
         b.setPadding(dp(10), 0, dp(10), 0);
@@ -161,20 +161,21 @@ final class EntityAdapter extends BaseAdapter {
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(14), dp(12), dp(12), dp(12));
-        row.setMinimumHeight(dp(68));
+        row.setPadding(dp(16), dp(12), dp(12), dp(12));
+        row.setMinimumHeight(dp(64));
         ViewGroup.MarginLayoutParams rowLp = new ViewGroup.MarginLayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         row.setLayoutParams(new android.widget.AbsListView.LayoutParams(rowLp));
 
         h.icon = text(22, R.color.text);
-        h.icon.setGravity(Gravity.CENTER);
-        row.addView(h.icon, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        h.icon.setVisibility(View.GONE); // the minimal look has no icon column
+        row.addView(h.icon);
 
         LinearLayout texts = new LinearLayout(context);
         texts.setOrientation(LinearLayout.VERTICAL);
-        texts.setPadding(dp(10), 0, dp(6), 0);
-        h.name = text(16, R.color.text);
+        texts.setPadding(dp(4), 0, dp(6), 0);
+        h.name = text(15, R.color.text);
+        h.name.setTypeface(Ui.MEDIUM);
         h.name.setMaxLines(2);
         h.name.setEllipsize(TextUtils.TruncateAt.END);
         h.subtitle = text(13, R.color.text_dim);
@@ -301,7 +302,7 @@ final class EntityAdapter extends BaseAdapter {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         h.image = new ImageView(context);
         h.image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        h.image.setBackgroundColor(0xFF000000);
+        h.image.setBackgroundColor(context.getResources().getColor(R.color.placeholder));
         h.image.setClipToOutline(true);
         card.addView(h.image, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(200)));
         h.name = text(15, R.color.text);
@@ -334,7 +335,7 @@ final class EntityAdapter extends BaseAdapter {
         h.entity = e;
         boolean available = e.available() || "unknown".equals(e.state) && e.kind() == Entity.Kind.ACTION;
         h.root.setBackgroundResource(e.controllable() && e.isOn() && e.available()
-                ? R.drawable.card_on : R.drawable.card);
+                ? R.drawable.card_on : R.drawable.row_card);
         h.root.setAlpha(available || e.kind() == Entity.Kind.VALUE ? 1f : 0.55f);
         h.name.setText(e.name());
 

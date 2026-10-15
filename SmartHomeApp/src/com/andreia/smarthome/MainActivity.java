@@ -42,10 +42,13 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-public class MainActivity extends Activity implements EntityAdapter.Controller, CameraLoader.Listener {
+public class MainActivity extends Activity implements EntityAdapter.Controller, CameraLoader.Listener,
+        HomeScreen.Host, CamerasScreen.Host {
+
+    private enum Screen { HOME, CAMERAS, MORE }
 
     private enum Tab {
-        MAIN("Главное"), CONTROL("Управление"), SENSORS("Датчики"), CAMERAS("Камеры"), ALL("Все");
+        CONTROL("Управление"), SENSORS("Датчики"), ALL("Все");
 
         final String title;
 
@@ -54,10 +57,6 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
         }
     }
 
-    private static final String[] MAIN_DOMAINS = {
-            "alarm_control_panel", "person", "climate", "water_heater", "cover", "light", "lock",
-            "fan", "input_boolean", "vacuum", "media_player", "scene", "script",
-    };
     private static final String[] CONTROL_DOMAINS = {
             "alarm_control_panel", "climate", "water_heater", "light", "switch", "fan", "cover", "lock",
             "input_boolean", "vacuum", "media_player", "humidifier", "siren", "scene", "script",
@@ -102,10 +101,23 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
     private HaConnection connection;
     private CameraLoader cameras;
     private EntityAdapter adapter;
-    private TextView status, weather, empty;
+    private TextView empty, moreKicker;
+    private Ui uiKit;
+    private HomeScreen homeScreen;
+    private CamerasScreen camerasScreen;
+    private EntityAdapter favoritesAdapter;
+    private View homeScroll, camerasScroll, moreView;
+    private LinearLayout nav;
+    private Screen screen = Screen.HOME;
+    private boolean online;
+    private long dataTime;
+    private String location = "Дом";
+    private double[] powerHistory;
+    private String powerHistoryId;
+    private long powerHistoryAt;
     private EditText search;
     private LinearLayout tabBar;
-    private Tab tab = Tab.MAIN;
+    private Tab tab = Tab.CONTROL;
     private boolean started;
     private boolean haveLiveData;
     private boolean rebuildPending;
@@ -125,8 +137,17 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
             return;
         }
         setContentView(R.layout.activity_main);
-        status = (TextView) findViewById(R.id.status);
-        weather = (TextView) findViewById(R.id.weather);
+        moreKicker = (TextView) findViewById(R.id.more_kicker);
+        homeScroll = findViewById(R.id.home_scroll);
+        camerasScroll = findViewById(R.id.cameras_scroll);
+        moreView = findViewById(R.id.more);
+        nav = (LinearLayout) findViewById(R.id.nav);
+        uiKit = new Ui(this);
+        homeScreen = new HomeScreen(uiKit, (LinearLayout) findViewById(R.id.home), this);
+        camerasScreen = new CamerasScreen(uiKit, (LinearLayout) findViewById(R.id.cameras), this);
+        favoritesAdapter = new EntityAdapter(this, this);
+        dataTime = cacheFile().lastModified();
+        location = getSharedPreferences("ha", MODE_PRIVATE).getString("location", "Дом");
         empty = (TextView) findViewById(R.id.empty);
         search = (EditText) findViewById(R.id.search);
         tabBar = (LinearLayout) findViewById(R.id.tabs);
@@ -138,9 +159,15 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
         cameras = new CameraLoader(session, this);
 
         if (savedInstanceState != null) {
-            tab = Tab.valueOf(savedInstanceState.getString("tab", Tab.MAIN.name()));
+            try {
+                tab = Tab.valueOf(savedInstanceState.getString("tab", Tab.CONTROL.name()));
+                screen = Screen.valueOf(savedInstanceState.getString("screen", Screen.HOME.name()));
+            } catch (IllegalArgumentException ignored) {
+                // State from an older version.
+            }
         }
         buildTabs();
+        buildNav();
         search.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {
@@ -161,7 +188,7 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
                 showMainMenu(v);
             }
         });
-        setStatus("Подключение…", R.color.text_dim);
+        showScreen(screen);
         loadCache();
     }
 
@@ -169,6 +196,7 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putString("tab", tab.name());
+        outState.putString("screen", screen.name());
     }
 
     @Override
@@ -258,7 +286,10 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
     }
 
     private void disconnected(String reason) {
-        setStatus("Нет связи", R.color.error);
+        if (online) {
+            online = false;
+            scheduleRebuild();
+        }
         if (started) {
             ui.removeCallbacks(reconnect);
             ui.postDelayed(reconnect, retryDelayMs);
@@ -295,7 +326,8 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
                 @Override
                 public void run() {
                     retryDelayMs = 2000;
-                    setStatus("● Онлайн", R.color.ok);
+                    online = true;
+                    requestConfig();
                 }
             });
         }
@@ -319,7 +351,9 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
                         entities.put(e.id, e);
                     }
                     haveLiveData = true;
+                    dataTime = System.currentTimeMillis();
                     rebuildNow();
+                    requestPowerHistory(false);
                 }
             });
         }
@@ -380,8 +414,34 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
             return; // the user is still adjusting it; keep the local value
         }
         e.update(newState);
-        if (shownIds.contains(id) || "weather".equals(e.domain)) {
+        if (powerHistory != null && id.equals(powerHistoryId)) {
+            appendPower(e);
+        }
+        if (screen == Screen.MORE ? shownIds.contains(id) : relevant(e)) {
             scheduleRebuild();
+        }
+    }
+
+    /** Whether a change of this entity can alter the current dashboard screen. */
+    private boolean relevant(Entity e) {
+        if (screen == Screen.CAMERAS) {
+            return "camera".equals(e.domain) || e.id.endsWith("_motion") || e.id.endsWith("_person_occupancy");
+        }
+        switch (e.domain) {
+            case "alarm_control_panel":
+            case "weather":
+            case "climate":
+                return true;
+            case "binary_sensor":
+                String dc = e.deviceClass();
+                return HomeScreen.has(new String[]{"door", "window", "garage_door", "opening", "moisture",
+                        "smoke", "gas", "carbon_monoxide"}, dc) || session.favorites().contains(e.id);
+            case "sensor":
+                return "power".equals(e.deviceClass()) || "temperature".equals(e.deviceClass())
+                        || e.id.endsWith("_current") || e.id.endsWith("_voltage")
+                        || session.favorites().contains(e.id);
+            default:
+                return session.favorites().contains(e.id);
         }
     }
 
@@ -454,6 +514,7 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
                 JSONObject o = new JSONObject();
                 o.put("i", e.id).put("s", e.state).put("a", e.attributes);
                 if (e.area != null) o.put("r", e.area);
+                if (e.lastChanged > 0) o.put("t", e.lastChanged);
                 out.put(o);
             } catch (JSONException ignored) {
                 // Skip this one.
@@ -490,6 +551,7 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
                         JSONObject o = a.getJSONObject(i);
                         Entity e = new Entity(o.getString("i"), o.optString("s"), o.optJSONObject("a"));
                         e.area = o.has("r") ? o.optString("r") : null;
+                        e.lastChanged = o.optLong("t", 0);
                         list.add(e);
                     }
                 } catch (Exception ignored) {
@@ -513,18 +575,18 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
 
     private void buildTabs() {
         tabBar.removeAllViews();
-        float d = getResources().getDisplayMetrics().density;
         for (final Tab t : Tab.values()) {
+            boolean active = t == tab;
             TextView chip = new TextView(this);
             chip.setText(t.title);
-            chip.setTextSize(15);
+            chip.setTextSize(13);
+            chip.setTypeface(Ui.MEDIUM);
             chip.setGravity(Gravity.CENTER);
-            chip.setPadding(Math.round(16 * d), 0, Math.round(16 * d), 0);
-            chip.setBackgroundResource(t == tab ? R.drawable.chip_active : R.drawable.chip);
-            chip.setTextColor(getResources().getColor(t == tab ? android.R.color.white : R.color.text));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, Math.round(38 * d));
-            lp.setMarginEnd(Math.round(8 * d));
+            chip.setPadding(dp(15), 0, dp(15), 0);
+            chip.setBackgroundResource(active ? R.drawable.chip_active : R.drawable.chip);
+            chip.setTextColor(getResources().getColor(active ? R.color.on_dark : R.color.text_body));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(34));
+            lp.setMarginEnd(dp(7));
             chip.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -552,7 +614,7 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
     private void scheduleRebuild() {
         if (!rebuildPending) {
             rebuildPending = true;
-            ui.postDelayed(rebuildTask, 300);
+            ui.postDelayed(rebuildTask, screen == Screen.MORE ? 300 : 1000);
         }
     }
 
@@ -563,21 +625,27 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
     }
 
     private void rebuild() {
+        if (screen == Screen.HOME) {
+            renderHome();
+            return;
+        }
+        if (screen == Screen.CAMERAS) {
+            camerasScreen.render(entities);
+            return;
+        }
+        int controls = 0;
+        for (Entity e : entities.values()) {
+            if (e.primary() && e.controllable()) controls++;
+        }
+        moreKicker.setText((online ? "онлайн" : "нет связи") + " · " + entities.size() + " сущностей · "
+                + controls + " для управления");
         List<Object> items = new ArrayList<Object>();
         switch (tab) {
-            case MAIN:
-                buildMain(items);
-                break;
             case CONTROL:
                 addGrouped(items, CONTROL_DOMAINS, true);
                 break;
             case SENSORS:
                 buildSensors(items);
-                break;
-            case CAMERAS:
-                for (Entity e : sorted(entities.values())) {
-                    if ("camera".equals(e.domain) && e.primary() && e.available()) items.add(e);
-                }
                 break;
             case ALL:
                 buildAll(items);
@@ -589,7 +657,6 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
         }
         shownIds = ids;
         adapter.setItems(items);
-        updateWeather();
         if (items.isEmpty()) {
             empty.setVisibility(View.VISIBLE);
             if (!entities.isEmpty()) {
@@ -597,23 +664,6 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
             }
         } else {
             empty.setVisibility(View.GONE);
-        }
-    }
-
-    private void buildMain(List<Object> items) {
-        List<String> favorites = session.favorites();
-        boolean any = false;
-        for (String id : favorites) {
-            Entity e = entities.get(id);
-            if (e != null) {
-                if (!any) items.add("Избранное");
-                items.add(e);
-                any = true;
-            }
-        }
-        if (!any && !entities.isEmpty()) {
-            items.add("Удерживайте любой элемент, чтобы закрепить его здесь");
-            addGrouped(items, MAIN_DOMAINS, false);
         }
     }
 
@@ -720,28 +770,6 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
         return l;
     }
 
-    private void updateWeather() {
-        Entity best = null;
-        for (Entity e : entities.values()) {
-            if ("weather".equals(e.domain) && e.available()
-                    && (best == null || e.id.contains("yandex"))) {
-                best = e;
-            }
-        }
-        if (best == null) {
-            weather.setVisibility(View.GONE);
-            return;
-        }
-        String t = Format.number(best.attributes.optString("temperature"));
-        weather.setText((t != null ? t + "° · " : "") + Format.stateOf(best));
-        weather.setVisibility(View.VISIBLE);
-    }
-
-    private void setStatus(String text, int color) {
-        status.setText(text);
-        status.setTextColor(getResources().getColor(color));
-    }
-
     // ---- controls (EntityAdapter.Controller) --------------------------------
 
     @Override
@@ -833,16 +861,16 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
     public void onCameraImage(String entityId) {
         if (entityId.equals(fullscreenCamera) && fullscreenImage != null) {
             fullscreenImage.setImageBitmap(cameras.cached(entityId));
-        } else if (tab == Tab.CAMERAS) {
-            adapter.notifyDataSetChanged();
+        } else if (screen == Screen.CAMERAS) {
+            camerasScreen.onImage(entityId, cameras.cached(entityId));
         }
     }
 
     private final Runnable cameraTicker = new Runnable() {
         @Override
         public void run() {
-            if (tab == Tab.CAMERAS && fullscreenCamera == null) {
-                adapter.notifyDataSetChanged(); // rebinding requests fresh snapshots
+            if (screen == Screen.CAMERAS && fullscreenCamera == null) {
+                camerasScreen.refreshImages(entities, cameraWidth());
             }
             ui.postDelayed(this, 10000);
         }
@@ -1227,7 +1255,6 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
                                 connection.stop();
                                 connection = null;
                             }
-                            setStatus("Подключение…", R.color.text_dim);
                             retryDelayMs = 2000;
                             connect();
                         } else {
@@ -1257,5 +1284,319 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
         cacheFile().delete();
         startActivity(new Intent(this, LoginActivity.class));
         finish();
+    }
+
+    // ---- screens -------------------------------------------------------------
+
+    private void buildNav() {
+        nav.removeAllViews();
+        addNavItem(Screen.HOME, R.drawable.ic_home, "Главная");
+        addNavItem(Screen.CAMERAS, R.drawable.ic_camera, "Камеры");
+        addNavItem(Screen.MORE, R.drawable.ic_more, "Ещё");
+    }
+
+    private void addNavItem(final Screen target, int icon, String label) {
+        boolean active = screen == target;
+        int color = active ? R.color.ink : R.color.text_nav;
+        LinearLayout item = uiKit.vertical();
+        item.setGravity(Gravity.CENTER);
+        item.setBackgroundResource(R.drawable.nav_item);
+        item.setContentDescription(label);
+        item.addView(uiKit.icon(icon, color, 20));
+        TextView t = uiKit.text(label, 10.5f, color);
+        t.setLetterSpacing(0.02f);
+        if (active) t.setTypeface(Ui.MEDIUM);
+        item.addView(t, uiKit.margins(uiKit.wrap(), 0, 5, 0, 0));
+        item.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (screen == target) {
+                    scrollToTop();
+                } else {
+                    showScreen(target);
+                }
+            }
+        });
+        nav.addView(item, uiKit.weight(1, 52));
+    }
+
+    private void showScreen(Screen target) {
+        screen = target;
+        homeScroll.setVisibility(target == Screen.HOME ? View.VISIBLE : View.GONE);
+        camerasScroll.setVisibility(target == Screen.CAMERAS ? View.VISIBLE : View.GONE);
+        moreView.setVisibility(target == Screen.MORE ? View.VISIBLE : View.GONE);
+        buildNav();
+        rebuildNow();
+    }
+
+    private void scrollToTop() {
+        if (screen == Screen.HOME) ((android.widget.ScrollView) homeScroll).smoothScrollTo(0, 0);
+        if (screen == Screen.CAMERAS) ((android.widget.ScrollView) camerasScroll).smoothScrollTo(0, 0);
+    }
+
+    private void renderHome() {
+        HomeScreen.Model m = new HomeScreen.Model();
+        m.entities = entities;
+        m.location = homeName();
+        m.online = online;
+        m.dataTime = dataTime;
+        m.favorites = session.favorites();
+        m.dismissed = dismissedAlerts();
+        android.content.SharedPreferences prefs = getSharedPreferences("ha", MODE_PRIVATE);
+        m.insideId = prefs.getString("inside_temp", null);
+        m.powerId = prefs.getString("power_sensor", null);
+        Entity power = HomeScreen.powerSensor(entities, m.powerId);
+        m.powerHistory = power != null && power.id.equals(powerHistoryId) ? powerHistory : null;
+        homeScreen.render(m);
+    }
+
+    /** The area most entities belong to ("Дача"), else HA's location name, else "Дом". */
+    private String homeName() {
+        Map<String, Integer> counts = new HashMap<String, Integer>();
+        String best = null;
+        int bestCount = 0;
+        for (String area : areaOf.values()) {
+            Integer c = counts.get(area);
+            c = c == null ? 1 : c + 1;
+            counts.put(area, c);
+            if (c > bestCount) {
+                best = area;
+                bestCount = c;
+            }
+        }
+        if (best != null && bestCount * 2 > areaOf.size()) {
+            return best;
+        }
+        return location;
+    }
+
+    private void requestConfig() {
+        HaConnection c = connection;
+        if (c == null) return;
+        try {
+            c.request(new JSONObject().put("type", "get_config"), new HaConnection.DataHandler() {
+                @Override
+                public void onData(Object result) {
+                    if (!(result instanceof JSONObject)) return;
+                    final String name = ((JSONObject) result).optString("location_name", "");
+                    ui.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            location = name.isEmpty() || "Home Assistant".equals(name) ? "Дом" : name;
+                            getSharedPreferences("ha", MODE_PRIVATE).edit().putString("location", location).apply();
+                        }
+                    });
+                }
+            });
+        } catch (JSONException ignored) {
+            // Constant keys.
+        }
+    }
+
+    /** Loads the last 6 hours of the power sensor for the sparkline (at most every 10 minutes). */
+    private void requestPowerHistory(boolean force) {
+        HaConnection c = connection;
+        final Entity power = HomeScreen.powerSensor(entities,
+                getSharedPreferences("ha", MODE_PRIVATE).getString("power_sensor", null));
+        if (c == null || power == null) return;
+        if (!force && power.id.equals(powerHistoryId)
+                && System.currentTimeMillis() - powerHistoryAt < 10 * 60000L) return;
+        final long start = System.currentTimeMillis() - 6 * 3600000L;
+        java.text.SimpleDateFormat iso = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
+        iso.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+        try {
+            JSONObject msg = new JSONObject()
+                    .put("type", "history/history_during_period")
+                    .put("start_time", iso.format(new java.util.Date(start)))
+                    .put("entity_ids", new JSONArray().put(power.id))
+                    .put("minimal_response", true)
+                    .put("no_attributes", true)
+                    .put("significant_changes_only", false);
+            c.request(msg, new HaConnection.DataHandler() {
+                @Override
+                public void onData(Object result) {
+                    if (!(result instanceof JSONObject)) return;
+                    JSONArray rows = ((JSONObject) result).optJSONArray(power.id);
+                    if (rows == null) return;
+                    final double[] series = downsample(rows, start, 60);
+                    ui.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            powerHistory = series;
+                            powerHistoryId = power.id;
+                            powerHistoryAt = System.currentTimeMillis();
+                            if (screen == Screen.HOME) scheduleRebuild();
+                        }
+                    });
+                }
+            });
+        } catch (JSONException ignored) {
+            // Constant keys.
+        }
+    }
+
+    /** Step-function history -> evenly spaced points (value held until the next change). */
+    static double[] downsample(JSONArray rows, long startMs, int points) {
+        long end = System.currentTimeMillis();
+        double[] out = new double[points];
+        double value = Double.NaN;
+        int row = 0;
+        for (int i = 0; i < points; i++) {
+            long t = startMs + (end - startMs) * i / (points - 1);
+            while (row < rows.length()) {
+                JSONObject r = rows.optJSONObject(row);
+                long at = r == null ? 0 : (long) (r.optDouble("lu", 0) * 1000);
+                if (at > t) break;
+                try {
+                    value = Double.parseDouble(r.optString("s"));
+                } catch (NumberFormatException ignored) {
+                    // "unavailable" keeps the previous value.
+                }
+                row++;
+            }
+            out[i] = value;
+        }
+        double fill = Double.NaN;
+        for (double v : out) {
+            if (!Double.isNaN(v)) {
+                fill = v;
+                break;
+            }
+        }
+        if (Double.isNaN(fill)) return new double[0];
+        for (int i = 0; i < out.length; i++) {
+            if (Double.isNaN(out[i])) out[i] = fill;
+        }
+        return out;
+    }
+
+    private void appendPower(Entity e) {
+        double v;
+        try {
+            v = Double.parseDouble(e.state);
+        } catch (NumberFormatException ex) {
+            return;
+        }
+        powerHistory[powerHistory.length - 1] = v;
+    }
+
+    private int cameraWidth() {
+        return (getResources().getDisplayMetrics().widthPixels - uiKit.dp(47)) / 2;
+    }
+
+    // ---- HomeScreen.Host / CamerasScreen.Host -------------------------------------
+
+    @Override
+    public void alarmAction(final Entity alarm, final String service) {
+        boolean hasCode = alarm.attributes.has("code_format") && !alarm.attributes.isNull("code_format");
+        boolean needsCode = hasCode && ("alarm_disarm".equals(service)
+                || alarm.attributes.optBoolean("code_arm_required", true));
+        if (!needsCode) {
+            call(alarm.domain, service, alarm, null);
+            return;
+        }
+        final EditText code = new EditText(this);
+        code.setInputType("number".equals(alarm.attributes.optString("code_format"))
+                ? InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD
+                : InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        FrameLayout box = new FrameLayout(this);
+        box.setPadding(dp(24), dp(8), dp(24), 0);
+        box.addView(code);
+        new AlertDialog.Builder(this)
+                .setTitle("Код охраны")
+                .setView(box)
+                .setPositiveButton("OK", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        try {
+                            call(alarm.domain, service, alarm,
+                                    new JSONObject().put("code", code.getText().toString()));
+                        } catch (JSONException ignored) {
+                            // Plain string.
+                        }
+                    }
+                })
+                .setNegativeButton("Отмена", null)
+                .show();
+    }
+
+    @Override
+    public void showGroup(String title, final List<Entity> sensors) {
+        String[] lines = new String[sensors.size()];
+        for (int i = 0; i < sensors.size(); i++) {
+            Entity e = sensors.get(i);
+            lines[i] = e.name() + " — " + Format.stateOf(e);
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setItems(lines, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int which) {
+                        infoDialog(sensors.get(which));
+                    }
+                })
+                .setPositiveButton("Закрыть", null)
+                .show();
+    }
+
+    private Set<String> dismissedAlerts() {
+        return new HashSet<String>(getSharedPreferences("ha", MODE_PRIVATE)
+                .getStringSet("dismissed", new HashSet<String>()));
+    }
+
+    @Override
+    public void dismissAlert(Entity e) {
+        Set<String> set = dismissedAlerts();
+        // Keep only keys of entities that still exist, so the set stays small.
+        Iterator<String> it = set.iterator();
+        while (it.hasNext()) {
+            String k = it.next();
+            if (!entities.containsKey(k.substring(0, k.lastIndexOf('@')))) it.remove();
+        }
+        set.add(HomeScreen.alertKey(e));
+        getSharedPreferences("ha", MODE_PRIVATE).edit().putStringSet("dismissed", set).apply();
+        Toast.makeText(this, "Скрыто, пока датчик снова не сработает", Toast.LENGTH_SHORT).show();
+        rebuildNow();
+    }
+
+    @Override
+    public void pickEntity(final String prefKey, String title, final List<Entity> candidates) {
+        if (candidates.isEmpty()) return;
+        String[] names = new String[candidates.size() + 1];
+        names[0] = "Автоматически";
+        for (int i = 0; i < candidates.size(); i++) {
+            Entity e = candidates.get(i);
+            names[i + 1] = e.name() + " — " + Format.stateOf(e);
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setItems(names, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int which) {
+                        android.content.SharedPreferences.Editor ed =
+                                getSharedPreferences("ha", MODE_PRIVATE).edit();
+                        if (which == 0) ed.remove(prefKey);
+                        else ed.putString(prefKey, candidates.get(which - 1).id);
+                        ed.apply();
+                        if ("power_sensor".equals(prefKey)) requestPowerHistory(true);
+                        rebuildNow();
+                    }
+                })
+                .show();
+    }
+
+    @Override
+    public void openAllDevices() {
+        showScreen(Screen.MORE);
+    }
+
+    @Override
+    public EntityAdapter favoritesAdapter() {
+        return favoritesAdapter;
+    }
+
+    @Override
+    public void openCamera(Entity camera) {
+        cameraDialog(camera);
     }
 }

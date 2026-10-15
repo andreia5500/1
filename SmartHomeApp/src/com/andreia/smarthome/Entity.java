@@ -12,6 +12,8 @@ public final class Entity {
     public final String domain;
     public String state;
     public JSONObject attributes;
+    /** When the state last changed, epoch ms (0 if unknown). */
+    public long lastChanged;
 
     // From the entity/device/area registries (may stay empty).
     public String area;
@@ -26,13 +28,44 @@ public final class Entity {
     }
 
     public static Entity fromState(JSONObject s) {
-        return new Entity(s.optString("entity_id"), s.optString("state"), s.optJSONObject("attributes"));
+        Entity e = new Entity(s.optString("entity_id"), s.optString("state"), s.optJSONObject("attributes"));
+        e.lastChanged = parseTime(s.optString("last_changed", ""));
+        return e;
     }
 
     public void update(JSONObject s) {
         state = s.optString("state");
         JSONObject a = s.optJSONObject("attributes");
         attributes = a != null ? a : new JSONObject();
+        long t = parseTime(s.optString("last_changed", ""));
+        if (t > 0) {
+            lastChanged = t;
+        }
+    }
+
+    /** Parses HA timestamps like "2026-10-15T07:58:18.265959+00:00"; 0 on failure. */
+    public static long parseTime(String iso) {
+        if (iso == null || iso.length() < 19) {
+            return 0;
+        }
+        try {
+            java.util.Calendar c = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"));
+            c.clear();
+            c.set(Integer.parseInt(iso.substring(0, 4)), Integer.parseInt(iso.substring(5, 7)) - 1,
+                    Integer.parseInt(iso.substring(8, 10)), Integer.parseInt(iso.substring(11, 13)),
+                    Integer.parseInt(iso.substring(14, 16)), Integer.parseInt(iso.substring(17, 19)));
+            long ms = c.getTimeInMillis();
+            int tz = Math.max(iso.lastIndexOf('+'), iso.lastIndexOf('-'));
+            if (tz > 18 && iso.length() >= tz + 6) {
+                int sign = iso.charAt(tz) == '-' ? -1 : 1;
+                int offMin = Integer.parseInt(iso.substring(tz + 1, tz + 3)) * 60
+                        + Integer.parseInt(iso.substring(tz + 4, tz + 6));
+                ms -= sign * offMin * 60000L;
+            }
+            return ms;
+        } catch (RuntimeException e) {
+            return 0;
+        }
     }
 
     public String name() {

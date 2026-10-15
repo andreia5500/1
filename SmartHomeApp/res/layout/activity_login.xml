@@ -11,87 +11,78 @@
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:orientation="vertical"
-        android:padding="28dp">
+        android:padding="22dp">
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="🏠"
-            android:textSize="56sp" />
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="0.16"
+            android:text="HOME ASSISTANT"
+            android:textColor="@color/text_dim"
+            android:textSize="11sp" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="7dp"
+            android:layout_marginBottom="22dp"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="-0.02"
             android:text="@string/app_name"
             android:textColor="@color/text"
-            android:textSize="30sp"
-            android:textStyle="bold" />
+            android:textSize="27sp" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="28dp"
-            android:text="Вход в Home Assistant"
-            android:textColor="@color/text_dim"
-            android:textSize="16sp" />
-
-        <TextView style="@style/FieldLabel" android:text="Адрес сервера" />
-        <EditText
-            android:id="@+id/url"
-            style="@style/Field"
-            android:inputType="textUri" />
-
-        <TextView style="@style/FieldLabel" android:text="Логин" />
-        <EditText
-            android:id="@+id/username"
-            style="@style/Field"
-            android:inputType="text" />
-
-        <TextView style="@style/FieldLabel" android:text="Пароль" />
-        <EditText
-            android:id="@+id/password"
-            style="@style/Field"
-            android:inputType="textPassword" />
-
-        <TextView
-            android:id="@+id/code_label"
-            style="@style/FieldLabel"
-            android:text="Код подтверждения"
-            android:visibility="gone" />
-        <EditText
-            android:id="@+id/code"
-            style="@style/Field"
-            android:inputType="number"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/error"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:textColor="@color/error"
-            android:textSize="15sp"
-            android:visibility="gone" />
+            android:background="@drawable/card"
+            android:orientation="vertical"
+            android:padding="18dp">
 
-        <Button
-            android:id="@+id/login"
-            android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:layout_marginTop="20dp"
-            android:background="@drawable/btn_primary"
-            android:stateListAnimator="@null"
-            android:text="Войти"
-            android:textAllCaps="false"
-            android:textColor="#FFFFFFFF"
-            android:textSize="18sp" />
+            <TextView style="@style/FieldLabel" android:layout_marginTop="0dp" android:text="Адрес сервера" />
+            <EditText android:id="@+id/url" style="@style/Field" android:inputType="textUri" />
 
-        <ProgressBar
-            android:id="@+id/progress"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:layout_marginTop="16dp"
-            android:visibility="gone" />
+            <TextView style="@style/FieldLabel" android:text="Логин" />
+            <EditText android:id="@+id/username" style="@style/Field" android:inputType="text" />
+
+            <TextView style="@style/FieldLabel" android:text="Пароль" />
+            <EditText android:id="@+id/password" style="@style/Field" android:inputType="textPassword" />
+
+            <TextView android:id="@+id/code_label" style="@style/FieldLabel"
+                android:text="Код подтверждения" android:visibility="gone" />
+            <EditText android:id="@+id/code" style="@style/Field" android:inputType="number"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/error"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:textColor="@color/alarm"
+                android:textSize="14sp"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/login"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="18dp"
+                android:background="@drawable/btn_accent"
+                android:fontFamily="sans-serif-medium"
+                android:stateListAnimator="@null"
+                android:text="Войти"
+                android:textAllCaps="false"
+                android:textColor="@color/on_dark"
+                android:textSize="15sp" />
+
+            <ProgressBar
+                android:id="@+id/progress"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="14dp"
+                android:visibility="gone" />
+        </LinearLayout>
     </LinearLayout>
 </ScrollView>

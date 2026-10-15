@@ -35,11 +35,17 @@ public final class HaConnection implements WebSocketClient.Listener {
         void onResult(boolean success, String error);
     }
 
+    /** For commands whose answer carries data; result is null on failure. */
+    public interface DataHandler {
+        void onData(Object result);
+    }
+
     private static final long PING_INTERVAL_MS = 25000;
 
     private final String baseUrl;
     private final Callback callback;
     private final Map<Integer, ResultHandler> pending = new HashMap<Integer, ResultHandler>();
+    private final Map<Integer, DataHandler> pendingData = new HashMap<Integer, DataHandler>();
 
     private WebSocketClient ws;
     private String accessToken;
@@ -103,6 +109,24 @@ public final class HaConnection implements WebSocketClient.Listener {
             send(msg, handler);
         } catch (JSONException e) {
             handler.onResult(false, e.getMessage());
+        }
+    }
+
+    /** Sends any command (e.g. history, get_config) and hands back its "result". */
+    public void request(JSONObject msg, DataHandler handler) {
+        int id;
+        synchronized (this) {
+            id = nextId++;
+            pendingData.put(id, handler);
+        }
+        try {
+            msg.put("id", id);
+            ws.send(msg.toString());
+        } catch (Exception e) {
+            synchronized (this) {
+                pendingData.remove(id);
+            }
+            handler.onData(null);
         }
     }
 
@@ -208,8 +232,14 @@ public final class HaConnection implements WebSocketClient.Listener {
             return;
         }
         ResultHandler handler;
+        DataHandler dataHandler;
         synchronized (this) {
             handler = pending.remove(id);
+            dataHandler = pendingData.remove(id);
+        }
+        if (dataHandler != null) {
+            dataHandler.onData(success ? msg.opt("result") : null);
+            return;
         }
         if (handler != null) {
             String error = null;
@@ -228,9 +258,15 @@ public final class HaConnection implements WebSocketClient.Listener {
             pinger.interrupt();
         }
         Map<Integer, ResultHandler> failed;
+        Map<Integer, DataHandler> failedData;
         synchronized (this) {
             failed = new HashMap<Integer, ResultHandler>(pending);
+            failedData = new HashMap<Integer, DataHandler>(pendingData);
             pending.clear();
+            pendingData.clear();
+        }
+        for (DataHandler h : failedData.values()) {
+            h.onData(null);
         }
         for (ResultHandler h : failed.values()) {
             h.onResult(false, "Связь прервалась");

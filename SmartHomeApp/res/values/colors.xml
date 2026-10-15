@@ -1,16 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg">#FF111317</color>
-    <color name="card">#FF1E2128</color>
-    <color name="card_on">#FF26303F</color>
-    <color name="chip">#FF2A2E36</color>
-    <color name="field">#FF1E2128</color>
-    <color name="text">#FFF2F3F5</color>
-    <color name="text_dim">#FF8A9099</color>
-    <color name="accent">#FF4C8DFF</color>
-    <color name="accent_text">#FF9CC8FF</color>
-    <color name="ok">#FF4CC38A</color>
-    <color name="warn">#FFFFB347</color>
-    <color name="error">#FFFF6B6B</color>
-    <color name="ripple">#33FFFFFF</color>
+    <!-- "Светлый минимализм": warm grey ground, white cards, ink text, one blue accent. -->
+    <color name="bg">#FFF2F1EE</color>
+    <color name="card">#FFFFFFFF</color>
+    <color name="card_on">#FFE9EFF6</color>
+    <color name="ink">#FF17181A</color>
+    <color name="text">#FF17181A</color>
+    <color name="text_body">#FF4A4C51</color>
+    <color name="text_dim">#FF6B6D72</color>
+    <color name="text_nav">#FF84868B</color>
+    <color name="line">#1217181A</color>
+    <color name="line_strong">#2417181A</color>
+    <color name="accent">#FF1C4E80</color>
+    <color name="accent_soft">#141C4E80</color>
+    <color name="alarm">#FF922B21</color>
+    <color name="warn">#FF8A4B10</color>
+    <color name="ok">#FF2F6B4F</color>
+    <color name="error">#FF922B21</color>
+    <color name="placeholder">#FFE4E3DE</color>
+    <color name="on_dark">#FFFFFFFF</color>
+    <color name="on_dark_dim">#A8FFFFFF</color>
+    <color name="ripple">#1F17181A</color>
+    <color name="ripple_dark">#33FFFFFF</color>
 </resources>
