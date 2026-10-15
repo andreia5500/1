@@ -44,6 +44,8 @@ public final class WebSocketClient {
     private OutputStream out;
     private volatile boolean closed;
     private final AtomicBoolean notified = new AtomicBoolean();
+    private final java.util.concurrent.ExecutorService writer =
+            java.util.concurrent.Executors.newSingleThreadExecutor();
 
     public WebSocketClient(URI uri, Listener listener) {
         this.uri = uri;
@@ -112,31 +114,64 @@ public final class WebSocketClient {
         reader.start();
     }
 
-    public synchronized void send(String text) throws IOException {
+    /**
+     * Queues a text frame. Writing happens on a background thread: Android forbids
+     * network I/O on the UI thread, where button taps call this from.
+     */
+    public void send(String text) throws IOException {
         if (closed || out == null) {
             throw new IOException("closed");
         }
-        writeFrame(0x1, text.getBytes(UTF8));
+        final byte[] payload = text.getBytes(UTF8);
+        try {
+            writer.execute(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        synchronized (WebSocketClient.this) {
+                            if (!closed) {
+                                writeFrame(0x1, payload);
+                            }
+                        }
+                    } catch (Exception e) {
+                        shutdown(e.getMessage() != null ? e.getMessage() : e.toString());
+                    }
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            throw new IOException("closed");
+        }
     }
 
+    /** Closes the connection; safe to call from any thread. */
     public void close() {
         if (closed) {
             return;
         }
         try {
-            synchronized (this) {
-                if (out != null) {
-                    writeFrame(0x8, new byte[0]);
+            writer.execute(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        synchronized (WebSocketClient.this) {
+                            if (out != null && !closed) {
+                                writeFrame(0x8, new byte[0]);
+                            }
+                        }
+                    } catch (Exception ignored) {
+                        // Closing anyway.
+                    }
+                    shutdown("closed by client");
                 }
-            }
-        } catch (IOException ignored) {
-            // Closing anyway.
+            });
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            // Already shut down.
         }
-        shutdown("closed by client");
     }
 
     private void shutdown(String reason) {
         closed = true;
+        writer.shutdown();
         try {
             if (socket != null) {
                 socket.close();

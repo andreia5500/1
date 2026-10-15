@@ -1245,11 +1245,17 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
     }
 
     private void showMainMenu(View anchor) {
-        String[] items = {"Обновить", "Выйти (" + session.baseUrl().replaceFirst("^https?://", "") + ")"};
+        String[] items = {"Написать сообщение (ВК)…", "Обновить",
+                "Выйти (" + session.baseUrl().replaceFirst("^https?://", "") + ")"};
         new AlertDialog.Builder(this)
                 .setItems(items, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
+                        if (which == 0) {
+                            chooseMessageTarget();
+                            return;
+                        }
+                        which--;
                         if (which == 0) {
                             if (connection != null) {
                                 connection.stop();
@@ -1598,5 +1604,79 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
     @Override
     public void openCamera(Entity camera) {
         cameraDialog(camera);
+    }
+
+    // ---- messages (VK and other notify targets in HA) -----------------------------
+
+    /** HA notify entities: VK Notify, the Companion app on phones, etc. VK first. */
+    private List<Entity> notifyTargets() {
+        List<Entity> list = new ArrayList<Entity>();
+        for (Entity e : entities.values()) {
+            if ("notify".equals(e.domain) && !"unavailable".equals(e.state)) list.add(e);
+        }
+        Collections.sort(list, new Comparator<Entity>() {
+            @Override
+            public int compare(Entity a, Entity b) {
+                boolean va = a.id.contains("vk"), vb = b.id.contains("vk");
+                if (va != vb) return va ? -1 : 1;
+                return a.name().compareToIgnoreCase(b.name());
+            }
+        });
+        return list;
+    }
+
+    private void chooseMessageTarget() {
+        final List<Entity> targets = notifyTargets();
+        if (targets.isEmpty()) {
+            Toast.makeText(this, "В Home Assistant нет служб уведомлений", Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (targets.size() == 1) {
+            messageDialog(targets.get(0));
+            return;
+        }
+        String[] names = new String[targets.size()];
+        for (int i = 0; i < names.length; i++) {
+            Entity e = targets.get(i);
+            names[i] = e.id.contains("vk") ? "ВКонтакте (" + e.name() + ")" : e.name();
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Куда отправить")
+                .setItems(names, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int which) {
+                        messageDialog(targets.get(which));
+                    }
+                })
+                .show();
+    }
+
+    private void messageDialog(final Entity target) {
+        final EditText text = new EditText(this);
+        text.setHint("Текст сообщения");
+        text.setMinLines(2);
+        text.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        FrameLayout box = new FrameLayout(this);
+        box.setPadding(dp(24), dp(8), dp(24), 0);
+        box.addView(text);
+        new AlertDialog.Builder(this)
+                .setTitle(target.id.contains("vk") ? "Сообщение в ВК" : target.name())
+                .setView(box)
+                .setPositiveButton("Отправить", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        String message = text.getText().toString().trim();
+                        if (message.isEmpty()) return;
+                        try {
+                            call("notify", "send_message", target, new JSONObject().put("message", message));
+                            Toast.makeText(MainActivity.this, "Отправлено", Toast.LENGTH_SHORT).show();
+                        } catch (JSONException ignored) {
+                            // Plain string.
+                        }
+                    }
+                })
+                .setNegativeButton("Отмена", null)
+                .show();
     }
 }
