@@ -264,11 +264,11 @@ class MillTab(ttk.Frame):
         return ' · '.join('%s %s' % (name, fmt_long(cats[k])) for k, name, _ in CAT_NAMES if cats.get(k, 0) >= 500)
 
     @staticmethod
-    def draw_bar(canvas, cats, width):
+    def draw_bar(canvas, cats, width, names=CAT_NAMES):
         total = sum(cats.values()) or 1
         x = 0
         canvas.create_rectangle(0, 0, width, 8, fill='#ECE7DC', outline='')
-        for k, _, color in CAT_NAMES:
+        for k, _, color in names:
             w = width * cats.get(k, 0) / total
             if w >= 1:
                 canvas.create_rectangle(x, 0, x + w, 8, fill=color, outline='')
@@ -439,7 +439,7 @@ class SetupWindow(tk.Toplevel):
         self.setup = setup
         title = 'O%s · %s' % (setup['no'], setup['file'])
         U.window(self, title, 1360, 860, 1000, 620)
-        U.header(self, title, '%s · %s · время %s' % (M.TITLES[tab.machine], setup['title'] or 'без названия',
+        U.header(self, title, '%s · %s · время %s' % (getattr(tab, 'machine_title', None) or M.TITLES[tab.machine], setup['title'] or 'без названия',
                                                      fmt_long(setup['ms'])), icon='nc')
         bar = ttk.Frame(self)
         bar.pack(side='bottom', fill='x', padx=16, pady=(8, 12))
@@ -625,9 +625,7 @@ def build_tabs(window, book):
 
     def dropped(paths):
         current = book.nametowidget(book.select())
-        if isinstance(current, MillTab):
+        if hasattr(current, 'load'):
             current.load(paths)
-        else:
-            window.drop_auto(paths)
     window.dnd_enabled = dnd.enable(window, dropped)
     return tabs
