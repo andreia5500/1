@@ -13,6 +13,10 @@ INF = float('inf')
 STD_PITCHES = [0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.75, 0.8, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 3.5, 4.0,
                4.5, 5.0, 5.5, 6.0] + [25.4 / n for n in (4, 4.5, 5, 6, 7, 8, 9, 10, 11, 11.5, 12, 13, 14, 16, 18, 19, 20,
                                                           24, 27, 28, 32, 36, 40, 44, 48, 56, 64, 72, 80)]
+# M-коды Diamond CSBII/CSBIII (Mitsubishi M65/M70), «Техническое обслуживание», приложение «М коды»
+DIAMOND_M = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 19, 20, 21, 22, 24, 25, 26, 27, 28, 30, 34, 35, 38, 39,
+             41, 42, 43, 44, 45, 46, 47, 48, 50, 51, 54, 55, 63, 64, 70, 71, 72, 73, 84, 85, 86, 87, 98, 99,
+             103, 104, 105, 113, 114, 253, 254, 255} | set(range(300, 351))
 SYNC_G = {110, 111, 112, 113, 114.1, 114.2, 114.3, 125, 126}
 
 
@@ -497,6 +501,7 @@ class Simulator:
         self._ctx_name = 'MAIN'
         self._stmt = None
         self._g75_e = 0.0
+        self._single = None
 
     # --- оси и шпиндели
     def axis_cfg(self, letter):
@@ -554,7 +559,10 @@ class Simulator:
             self.tool_cut_ms[self.current_tool_raw] = self.tool_cut_ms.get(self.current_tool_raw, 0) + ms
 
     def log_block(self, stmt, ms, note):
-        self.block_log.append(dict(lineNo=stmt['lineNo'], raw=stmt['raw'], ms=ms, note=note or '', segIndex=self._seg_index))
+        cut = self.cutting_ms - getattr(self, '_cut_mark', 0)
+        self._cut_mark = self.cutting_ms
+        self.block_log.append(dict(lineNo=stmt['lineNo'], raw=stmt['raw'], ms=ms, note=note or '', segIndex=self._seg_index,
+                                   cut=min(cut, ms), prog=self._ctx_name, tool=self.current_tool_raw))
         if self.current_tool_raw is not None:
             self.tool_total_ms[self.current_tool_raw] = self.tool_total_ms.get(self.current_tool_raw, 0) + ms
 
@@ -648,7 +656,16 @@ class Simulator:
 
     # --- постоянные циклы
     def canned_drill(self, tokens, gcode, line_no):
-        depth_axis = next((ax for ax in ('Z', 'X', 'Y') if any(t.get('letter') == ax and t['type'] != 'indexed' for t in tokens)), None)
+        # M800/M80 (токарный), 13.5: G83/G84/G85 — ось сверления Z (Z/W), G87/G88/G89 — ось X (X/U).
+        # Z/W (X/U) — дно: абсолютное или инкремент от точки R; R — расстояние от исходной точки
+        # (инкремент, знак не учитывается); K — число повторов (K0 — только запомнить).
+        radial = gcode in (87, 88, 88.1, 89)
+        letters = (('X', 'U'),) if radial else (('Z', 'W'), ('X', 'U'), ('Y', 'V'))
+        depth_axis = inc_letter = None
+        for ax, inc in letters:
+            if any(t.get('letter') in (ax, inc) and t['type'] != 'indexed' for t in tokens):
+                depth_axis, inc_letter = ax, inc
+                break
         if not depth_axis:
             self.warnings.append('Каноничный цикл G%s без адреса глубины' % js_num(gcode))
             return 0
@@ -656,8 +673,20 @@ class Simulator:
         def get(letter):
             t = next((tt for tt in tokens if tt.get('letter') == letter), None)
             return eval_expr(t.get('expr') or t.get('valueExpr'), self.vars) if t else None
-        depth_val = get(depth_axis)
-        r_val = get('R') or 0
+        start_val = self.pos.get(depth_axis) or 0
+        r_inc = abs(get('R') or 0)
+        if get(depth_axis) is not None:
+            bottom = get(depth_axis)
+            sign = 1 if bottom >= start_val else -1
+            r_point = start_val + sign * r_inc
+        else:
+            w = get(inc_letter) or 0
+            sign = 1 if w >= 0 else -1
+            r_point = start_val + sign * r_inc
+            bottom = r_point + w
+        k_rep = get('K')
+        repeats = 1 if k_rep is None else max(0, js_round(k_rep))
+        depth_val, r_val = bottom, r_point
         q_val = get('Q')
         f_val = get('F')
         dwell = get('P') or 0
@@ -737,13 +766,16 @@ class Simulator:
             t[0] += dwell
         if gcode in (83, 87, 83.1):
             t[0] += move_time_ms(total, self.eff_rapid(rapid), accel)
+        approach = move_time_ms(self.phys_dist(depth_axis, abs(r_val - start_val)), self.eff_rapid(rapid), accel) * 2
+        t[0] = (t[0] + approach) * repeats
+        cut[0] *= repeats
         self.add_cut(cut[0])
-        self.pos[depth_axis] = r_val
-        if depth_axis in ('X', 'Z'):
+        self.pos[depth_axis] = start_val      # возврат в исходную точку
+        if depth_axis in ('X', 'Z') and repeats:
             x0, z0 = self.ppos['X'], self.ppos['Z']
             start = z0 if depth_axis == 'Z' else x0
             if start is not None:
-                rpt = start + (r_val or 0)
+                rpt = start + (r_val - start_val)
                 if depth_axis == 'Z':
                     a, b, c = (x0, start), (x0, rpt), (x0, depth_val)
                 else:
@@ -917,7 +949,7 @@ class Simulator:
                     cond = eval_expr(tok['cond'], self.vars)
                     goto = next((t for t in toks if t['type'] == 'goto'), None)
                     if goto and truthy(cond):
-                        tgt = labels.get(js_key(goto['target']))
+                        tgt = self.find_label(ctx, goto['target'], ip)
                         if tgt is None:
                             jump = ip + 1
                             self.warnings.append('IF/GOTO%s: метка не найдена (стр. %d)' % (goto['target'], stmt['lineNo']))
@@ -930,7 +962,7 @@ class Simulator:
                             jump = tgt
                 elif typ == 'goto':
                     if not any(t['type'] == 'if' for t in toks):
-                        tgt = labels.get(js_key(tok['target']))
+                        tgt = self.find_label(ctx, tok['target'], ip)
                         if tgt is None:
                             jump = ip + 1
                             self.warnings.append('GOTO%s: метка не найдена (стр. %d) - переход проигнорирован' % (tok['target'], stmt['lineNo']))
@@ -963,13 +995,17 @@ class Simulator:
             for g in g_words:
                 if g in (0, 1, 2, 3):
                     self.motion = g
-                elif g == 90:
-                    self.absolute = True
-                    self.warnings.append('G90 (стр. %d): на этом станке G90 в перечне G-кодов - цикл продольной обработки, а не режим координат; модель трактует его как абсолютный режим (обычно безвредно), но ЕСЛИ это вызов цикла - время посчитано неверно, сообщите разработчику' % stmt['lineNo'])
+                    self._single = None
+                elif g == 80:
+                    self._single = None
+                elif g in (90, 92, 94):
+                    # лист G-кодов 2 (Diamond, #1037 cmdtyp=3): G90 — цикл продольного точения,
+                    # G92 — цикл нарезания резьбы, G94 — цикл поперечного точения (группа 09, модальные)
+                    self._single = g
                 elif g == 91:
                     self.absolute = False
                     self.warnings.append('G91 (стр. %d): в перечне G-кодов этого станка такого кода нет вовсе (относительные координаты задаются адресами U/W/V) - проверьте, не опечатка ли это' % stmt['lineNo'])
-                elif g in (94, 98):
+                elif g == 98:
                     self.feed_per_rev = False
                 elif g in (95, 99):
                     self.feed_per_rev = True
@@ -1138,6 +1174,10 @@ class Simulator:
                         self.ppos[ax] = None
                 move_ms += mx
                 notes.append('G28 в реф. точку (%s)' % ','.join(axes) if axes else 'G28 ориентация шпинделя')
+            elif self._single and any(word(l) for l in ('X', 'Z', 'U', 'W')):
+                move_ms += self.single_cycle(self._single, wval('X'), wval('Z'), wval('U'), wval('W'), wval('F') if f_word else None)
+                notes.append({90: 'G90 цикл продольного точения', 92: 'G92 цикл нарезания резьбы',
+                              94: 'G94 цикл поперечного точения'}[self._single])
             elif any(g in SYNC_G for g in g_words):
                 # G125 Z2 / G114.1 / G113 … — управление синхронизацией и совмещением осей,
                 # адреса осей в этих кадрах — номера осей, а не перемещение
@@ -1377,6 +1417,54 @@ class Simulator:
                     self.seg('rapid', [(xk, Z), (xk, z0)])
         return t_cut + t_rapid, n_pos
 
+    def single_cycle(self, g, X, Z, U, W, F):
+        """Одиночные циклы листа 2: G90 (продольный), G92 (резьба), G94 (поперечный). Возврат в начальную точку."""
+        sx, sz = self.pos.get('X') or 0, self.pos.get('Z') or 0
+        last = getattr(self, '_single_last', None) or {}
+        if last.get('g') != g:
+            last = {}
+        X = X if X is not None else (sx + U if U is not None else last.get('X', sx))
+        Z = Z if Z is not None else (sz + W if W is not None else last.get('Z', sz))
+        self._single_last = dict(g=g, X=X, Z=Z)     # данные цикла модальные: «X24.» повторяет цикл с прежним Z
+        if F is not None:
+            self.feed = F
+        xc, zc = self.axis_cfg('X') or {}, self.axis_cfg('Z') or {}
+        rx = lambda d: move_time_ms(self.phys_dist('X', abs(d)), self.eff_rapid(xc.get('rapid_rate_mm_min') or 24000), accel_of(xc, 'g0_accel_ms', 100))
+        rz = lambda d: move_time_ms(abs(d), self.eff_rapid(zc.get('rapid_rate_mm_min') or 24000), accel_of(zc, 'g0_accel_ms', 100))
+
+        def feed_ms(length, at_x):
+            rpm = self.current_rpm(at_x)
+            v = (self.feed or 0) * rpm if self.feed_per_rev else (self.feed or 0)
+            return length / v * 60000 if v > 0 else 0.0
+        x0, z0 = self.ppos['X'], self.ppos['Z']
+        if g == 90:
+            cut = feed_ms(abs(Z - sz), X) + feed_ms(self.phys_dist('X', abs(sx - X)), (sx + X) / 2)
+            t = rx(sx - X) + cut + rz(Z - sz)
+            pts = [('rapid', [(x0, z0), (X, z0)]), ('feed', [(X, z0), (X, Z), (x0, Z)]), ('rapid', [(x0, Z), (x0, z0)])]
+        elif g == 94:
+            cut = feed_ms(self.phys_dist('X', abs(sx - X)), (sx + X) / 2) + feed_ms(abs(Z - sz), sx)
+            t = rz(Z - sz) + cut + rx(sx - X)
+            pts = [('rapid', [(x0, z0), (x0, Z)]), ('feed', [(x0, Z), (X, Z), (X, z0)]), ('rapid', [(X, z0), (x0, z0)])]
+        else:
+            cut = feed_ms(abs(Z - sz), X)
+            t = rx(sx - X) + cut + rx(sx - X) + rz(Z - sz)
+            pts = [('rapid', [(x0, z0), (X, z0)]), ('thread', [(X, z0), (X, Z)]), ('rapid', [(X, Z), (x0, Z), (x0, z0)])]
+        self.add_cut(cut)
+        if x0 is not None and z0 is not None:
+            for kind, p in pts:
+                if kind == 'feed':
+                    self.seg(kind, p, feed=self.feed, fpr=self.feed_per_rev)
+                else:
+                    self.seg(kind, p, cycle=True) if kind == 'rapid' else self.seg(kind, p, lead=self.feed)
+        return t
+
+    @staticmethod
+    def find_label(ctx, target, ip):
+        """Поиск кадра N для GOTO / M99 P: от следующего кадра до конца, затем с начала программы
+        (M800/M80, 14.x: «управление передаётся кадру, который будет найден первым при данном поиске»)."""
+        lst = (ctx.get('label_all') or {}).get(js_key(target)) or []
+        return next((i for i in lst if i > ip), lst[0] if lst else None)
+
     def _return(self, stack, ctx):
         fr = stack.pop()
         if fr['repeatsLeft'] > 1:
@@ -1482,6 +1570,106 @@ def reconcile(sims):
         extra = sum(e['segMs'] for e in sim.events[cursor[si]:])
         finish.append(cumulative[si] + extra + sim.tail_ms)
     return dict(totalMs=max([0] + finish), finishMs=finish, warnings=warnings, barriers=barriers)
+
+
+def sync_check(sims):
+    """Метки ожидания !L по фактическому ходу программ (с подпрограммами и переходами).
+    На станке система, дошедшая до !Ln, ждёт, пока другая дойдёт до того же !Ln. Если общие метки идут
+    в разном порядке или встречаются разное число раз — обе системы встанут в вечное ожидание."""
+    out = []
+    if len(sims) < 2:
+        return out
+    seqs = {sim.name: [e['label'] for e in sim.events] for sim in sims}
+    names = list(seqs)
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            a, b = names[i], names[j]
+            common = set(seqs[a]) & set(seqs[b])
+            sa = [l for l in seqs[a] if l in common]
+            sb = [l for l in seqs[b] if l in common]
+            if sa == sb:
+                continue
+            k = next((n for n, (x, y) in enumerate(zip(sa, sb)) if x != y), min(len(sa), len(sb)))
+            if k < min(len(sa), len(sb)):
+                msg = ('Порядок меток ожидания различается: %s после %s ждёт !%s, а %s - !%s. Обе системы встанут в ожидании '
+                       'друг друга (станок «зависнет», цикл не закончится).' % (a, ' → '.join('!' + x for x in sa[max(0, k - 2):k]) or 'начала',
+                                                                                sa[k], b, sb[k]))
+            else:
+                longer, extra = (a, sa[k:]) if len(sa) > len(sb) else (b, sb[k:])
+                msg = ('Метки ожидания %s в системе %s выполняются больше раз, чем в другой системе - на них %s будет ждать '
+                       'вечно (станок «зависнет»).' % (', '.join('!' + x for x in extra[:5]), longer, longer))
+            out.append(dict(severity='error', file=None, code='SYNC-ORDER', certain=True, message=msg))
+    for sim in sims:
+        counts = {}
+        for l in seqs[sim.name]:
+            counts[l] = counts.get(l, 0) + 1
+        for other in sims:
+            if other is sim:
+                continue
+            for l, n in counts.items():
+                m = sum(1 for x in seqs[other.name] if x == l)
+                if m == 0:
+                    out.append(dict(severity='error', file=None, code='SYNC-MISS', certain=True,
+                                    message='Метка !%s выполняется в %s, но в %s её нет на фактическом пути программы (возможно, '
+                                    'она в пропущенной ветке IF/GOTO или в невызванной подпрограмме) - %s будет ждать вечно.' % (
+                                        l, sim.name, other.name, sim.name)))
+    return out
+
+
+def timeline(sims):
+    """Диаграмма работы систем: {имя: [dict(t0, t1, kind, line, prog, tool)]}, метки [(время, метка)], итог.
+    kind: cut — резание, move — перемещения/M/T-коды/шпиндель, wait — ожидание другой системы на !L."""
+    order, seen = [], set()
+    for sim in sims:
+        for e in sim.events:
+            if e['label'] not in seen:
+                seen.add(e['label'])
+                order.append(e['label'])
+    cursor = [0] * len(sims)
+    cumulative = [0.0] * len(sims)
+    waits, marks = {}, []
+    for label in order:
+        part, arrivals, barrier = [], {}, 0.0
+        for si, sim in enumerate(sims):
+            if cursor[si] < len(sim.events) and sim.events[cursor[si]]['label'] == label:
+                arrivals[si] = cumulative[si] + sim.events[cursor[si]]['segMs']
+                barrier = max(barrier, arrivals[si])
+                part.append(si)
+        for si in part:
+            waits[(si, cursor[si])] = barrier - arrivals[si]
+            cumulative[si] = barrier
+            cursor[si] += 1
+        if len(part) > 1:
+            marks.append((barrier, label))
+    rows = {}
+    for si, sim in enumerate(sims):
+        out, t, seg = [], 0.0, 0
+
+        def put(kind, ms, b=None):
+            nonlocal t
+            if ms <= 0:
+                return
+            line, prog, tool = (b['lineNo'], b.get('prog'), b.get('tool')) if b else (None, None, None)
+            if out and out[-1]['kind'] == kind and out[-1]['tool'] == tool and kind != 'wait':
+                out[-1]['t1'] = t + ms
+            else:
+                out.append(dict(t0=t, t1=t + ms, kind=kind, line=line, prog=prog, tool=tool))
+            t += ms
+
+        def flush(upto):
+            nonlocal seg
+            while seg < upto:
+                put('wait', waits.get((si, seg), 0.0))
+                seg += 1
+        for b in sim.block_log:
+            flush(b.get('segIndex', 0))
+            cut = max(0.0, min(b.get('cut', 0) or 0, b['ms']))
+            put('move', b['ms'] - cut, b)
+            put('cut', cut, b)
+        flush(len(sim.events))
+        rows[sim.name] = out
+    total = max([r[-1]['t1'] for r in rows.values() if r] + [0.0])
+    return dict(rows=rows, marks=marks, total=total)
 
 
 def detect_sub_number(text, file_name=''):
@@ -1640,7 +1828,7 @@ def validate_program(text, subprograms=None, is_subprogram=False, max_rpm=None):
     for key, idxs in sorted(dups.items(), key=lambda kv: int(kv[0]) if kv[0].isdigit() else 10 ** 12):
         lines = ', '.join(str(stmts[i]['lineNo']) for i in idxs)
         if key in referenced:
-            add('warning', stmts[idxs[0]], 'DUP-N', 'Номер кадра N%s встречается %d раз (строки %s), и на него есть переход (GOTO / P-Q цикла / M99 P) - проверьте, какой кадр возьмёт станок' % (key, len(idxs), lines))
+            add('warning', stmts[idxs[0]], 'DUP-N', 'Номер кадра N%s встречается %d раз (строки %s), и на него есть переход (GOTO / P-Q цикла / M99 P). Станок ищет номер вперёд от текущего кадра, затем с начала программы - проверьте, что попадёт в нужный' % (key, len(idxs), lines))
         else:
             add('warning', stmts[idxs[0]], 'DUP-N', 'Номер кадра N%s встречается %d раз (строки %s); переходов на него нет - для станка безопасно, но при поиске кадра (повторный пуск с N) оператор попадёт на первое вхождение' % (key, len(idxs), lines), False)
     stack, max_depth = [], 0
@@ -1692,8 +1880,9 @@ def validate_program(text, subprograms=None, is_subprogram=False, max_rpm=None):
             v = _safe(t['valueExpr'])
             if v not in KNOWN_G_CODES:
                 add('warning', s, 'G?', 'G%s: код не найден в справочном перечне G-кодов этого станка (список собран по фрагментам PDF и может быть неполон - возможна опечатка, проверьте вручную)' % t['valueExpr'], False)
-            elif v in (90, 91):
-                add('warning', s, 'G90/91', 'G%s: на этом станке (перечень G-кодов "лист 2") это НЕ режим абс./отн. координат - см. предупреждение при расчёте' % js_num(v), False)
+            elif v == 91:
+                add('warning', s, 'G91', 'G91: на листе G-кодов 2 (Diamond) такого кода нет - станок выдаст аварию P34; '
+                    'инкрементные перемещения задаются адресами U/W/V')
     for s in stmts:
         g8 = next((v for v in _gvals(s) if v in (81, 82, 83, 83.1, 84, 84.1, 85, 86, 87, 88, 89)), None)
         if g8 is None:
@@ -1768,12 +1957,14 @@ def validate_program(text, subprograms=None, is_subprogram=False, max_rpm=None):
             first = {k: stmts[label_all[js_key(k)][0]]['lineNo'] for k in dup}
             used = {k: stmts[(pi if k == p['valueExpr'] else qi)]['lineNo'] for k in dup}
             risky = [k for k in dup if first[k] != used[k]]
-            add('warning' if not risky else 'error', s, 'CYCLE-PQ-DUP',
-                'G%s P%s Q%s: номер %s повторяется в программе. Взят ближайший после цикла (%s). %s Дайте профилю уникальные номера N.' % (
+            add('warning', s, 'CYCLE-PQ-DUP',
+                'G%s P%s Q%s: номер %s повторяется в программе. Стойка Mitsubishi ищет номер кадра вперёд от текущего, '
+                'затем с начала программы (так в руководстве M800/M80 описаны GOTO и M99 P; для P/Q циклов отдельно не '
+                'оговорено) - взят %s.%s Надёжнее дать профилю уникальные номера N.' % (
                     js_num(g), p['valueExpr'], q['valueExpr'], ', '.join('N' + k for k in dup),
-                    ', '.join('N%s - стр. %d' % (k, used[k]) for k in dup),
-                    ('Если стойка ищет номер с начала программы, она возьмёт %s - контур будет чужим, станок выдаст аварию или обработает не то.' %
-                     ', '.join('N%s стр. %d' % (k, first[k]) for k in risky)) if risky else ''), certain=not risky or None)
+                    ', '.join('N%s стр. %d' % (k, used[k]) for k in dup),
+                    (' При поиске с начала был бы взят %s - чужой контур.' % ', '.join('N%s стр. %d' % (k, first[k]) for k in risky))
+                    if risky else ''), certain=not risky or None)
         for idx in range(pi, qi + 1):
             inner = stmts[idx]
             if inner is s:
@@ -1802,6 +1993,14 @@ def validate_program(text, subprograms=None, is_subprogram=False, max_rpm=None):
         st = _tok(s, letter)
         if st and _safe(st['valueExpr']) <= 0:
             add('warning', s, 'CYCLE-STEP', 'G%s %s%s: шаг должен быть положительным (0 или отрицательное значение бессмысленно для цикла с ломкой стружки)' % (js_num(g), letter, st['valueExpr']), False)
+    # M-коды станка; M06 на Diamond — счётчик деталей, не смена инструмента
+    for s in stmts:
+        for t in s['tokens']:
+            if t['type'] == 'word' and t['letter'] == 'M':
+                m = js_round(_safe(t['valueExpr']))
+                if m not in DIAMOND_M:
+                    add('warning', s, 'M?', 'M%s нет в перечне M-кодов Diamond CSBII/CSBIII - если на станке нет такой опции, '
+                        'будет авария (вышло время действия M-кода)' % t['valueExpr'], False)
     # режимы шпинделя и резьба: G96 без G50, резьба при G96, параметры G76, шаг
     css, clamped, pend76 = False, False, None
     for s in stmts:

@@ -85,3 +85,49 @@ class Stock(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class Manual(unittest.TestCase):
+    """По руководству M800/M80 (токарный) и «Техническому обслуживанию» Diamond CSBII/CSBIII."""
+
+    def test_g83_r_is_distance_from_start(self):
+        sim, _ = sim_of('G97S1=1000M3\nG99\nG0X0Z-5.\nG83Z10.R2.F0.1\nM30')
+        drill = next(s for s in sim.path if s['kind'] == 'drill')
+        self.assertEqual(drill['pts'][0][1], -3.0)      # R2 от Z-5 -> Z-3
+        self.assertEqual(sim.pos['Z'], -5.0)            # возврат в исходную точку
+        sim2, _ = sim_of('G97S1=1000M3\nG99\nG0X0Z-5.\nG83Z10.R2.F0.1K0\nM30')
+        self.assertFalse([s for s in sim2.path if s['kind'] == 'drill'])
+
+    def test_goto_searches_forward_first(self):
+        sim, _ = sim_of('#1=0\nN10G98G1W-1.F100.\n#1=#1+1\nIF[#1LT2]GOTO20\nM30\nN20G4X1.\nGOTO10\nN10G4X5.\nM30')
+        raws = [b['raw'] for b in sim.block_log]
+        self.assertIn('N10G4X5.', raws)                  # GOTO10 из стр. 7 нашёл N10 ниже, а не в начале
+        self.assertEqual(raws.count('N10G98G1W-1.F100.'), 1)
+
+    def test_list2_single_cycles(self):
+        sim, _ = sim_of('G97S1=1000M3\nG99\nG0X30.Z1.\nG90X26.Z-20.F0.1\nX24.\nG0X30.Z1.\nG94X10.Z-1.F0.1\nM30')
+        self.assertTrue(sim.feed_per_rev)              # G94 здесь не подача в минуту
+        feeds = [s for s in sim.path if s['kind'] == 'feed']
+        self.assertEqual(len(feeds), 3)
+        self.assertEqual(feeds[1]['pts'][1], (24.0, -20.0))
+
+    def test_unknown_m_code(self):
+        found = [f['code'] for f in E.validate_program('M3\nM06\nM777\n')[2]]
+        self.assertEqual(found.count('M?'), 1)
+
+    def test_sync_order_and_missing(self):
+        sims, _ = E.calculate([dict(name='S1', spindle='1', text='!L1\nG4X1.\n!L2\nM30'),
+                               dict(name='S2', spindle='2', text='!L2\nG4X1.\n!L1\nM30')], {})
+        self.assertEqual([f['code'] for f in E.sync_check(sims)][0], 'SYNC-ORDER')
+        sims, _ = E.calculate([dict(name='S1', spindle='1', text='#1=0\nIF[#1EQ0]GOTO5\n!L3\nN5!L1\nM30'),
+                               dict(name='S2', spindle='2', text='!L3\n!L1\nM30')], {})
+        self.assertIn('SYNC-MISS', [f['code'] for f in E.sync_check(sims)])
+
+    def test_timeline_matches_finish(self):
+        subs = {n: (PROG / ('O' + n)).read_text() for n in ('5000', '5001', '5002')}
+        sims, rep = E.calculate([dict(name='S1', spindle='1', text=(PROG / 'O6017').read_text()),
+                                 dict(name='S2', spindle='2', text=(PROG / 'O6018').read_text())], subs)
+        tl = E.timeline(sims)
+        for sim, finish in zip(sims, rep['finishMs']):
+            self.assertAlmostEqual(tl['rows'][sim.name][-1]['t1'], finish, places=3)
+        self.assertEqual(len(tl['marks']), len(rep['barriers']))

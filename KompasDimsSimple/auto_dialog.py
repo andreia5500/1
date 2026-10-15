@@ -304,7 +304,13 @@ class AutoTab(ttk.Frame):
             for n, w in b['waits'].items():
                 waits[n] = waits.get(n, 0) + w
         cross = []
+        dynamic = E.sync_check(sims)
+        seen_sync = {f['message'] for f in dynamic}
+        for f in dynamic:
+            cross.append(dict(severity=f['severity'], certain=f['certain'], code=f['code'], message=f['message'], file=None, line=None))
         for f in check['crossFindings']:
+            if f['code'] == 'SYNC' and any(c['code'] in ('SYNC-MISS', 'SYNC-ORDER') for c in cross):
+                continue
             cross.append(dict(severity=f['severity'], certain=f['certain'], code=f['code'], message=f['message'],
                               file=name_of.get((f.get('file') or {}).get('name'), None) if f.get('file') else None, line=None))
         cards = []
@@ -367,7 +373,12 @@ class AutoTab(ttk.Frame):
             warnings += sum(1 for i in issues if i['severity'] != 'error' and i not in cross)
         errors += sum(1 for i in cross if i['severity'] == 'error')
         warnings += sum(1 for i in cross if i['severity'] != 'error')
-        return dict(rep=rep, cards=cards, errors=errors, warnings=warnings, cross=cross, used=used,
+        try:
+            tl = E.timeline(sims)
+        except Exception as exc:
+            J.failure('Диаграмма работы систем', exc)
+            tl = None
+        return dict(rep=rep, cards=cards, errors=errors, warnings=warnings, cross=cross, used=used, timeline=tl,
                     missing=[n for n in used if n not in self.subs])
 
     # ------------------------------------------------------------ вид
@@ -409,6 +420,10 @@ class AutoTab(ttk.Frame):
         row.columnconfigure(1, weight=1, uniform='side')
         row.rowconfigure(0, weight=1)
         cards = {c['side']: c for c in (r['cards'] if r else [])}
+        if r and r.get('timeline') and r['timeline']['total'] > 0:
+            box = ttk.Frame(self.body, style='Card.TFrame', padding=(14, 8))
+            box.pack(side='bottom', fill='x', pady=(10, 0))
+            Timeline(box, r['timeline'], cards, self).pack(fill='x')
         for k, (side, _, role) in enumerate(SIDES):
             if side in cards:
                 w = self.card(row, cards[side])
@@ -644,6 +659,111 @@ def tool_list(text):
             if not seen[t]['name'] and note:
                 seen[t]['name'] = note.group(1).strip()
     return tools
+
+
+class Timeline(ttk.Frame):
+    """Диаграмма работы шпинделя (S1) и контршпинделя (S2) по времени: резание, перемещения, ожидание !L."""
+    COLORS = {'cut': U.BLUE, 'move': U.GOLD, 'wait': '#D8D2C4'}
+    NAMES = {'cut': 'резание', 'move': 'перемещения, M/T-коды', 'wait': 'ожидание !L'}
+
+    def __init__(self, parent, data, cards, tab):
+        super().__init__(parent, style='Paper.TFrame')
+        self.data, self.cards, self.tab = data, cards, tab
+        head = ttk.Frame(self, style='Paper.TFrame')
+        head.pack(fill='x')
+        ttk.Label(head, text='РАБОТА СИСТЕМ ПО ВРЕМЕНИ', style='Muted.TLabel', background=U.PAPER).pack(side='left')
+        for kind in ('cut', 'move', 'wait'):
+            c = tk.Canvas(head, width=14, height=10, background=U.PAPER, highlightthickness=0)
+            c.create_rectangle(1, 1, 13, 9, fill=self.COLORS[kind], outline='', stipple='gray50' if kind == 'wait' else '')
+            c.pack(side='left', padx=(14, 3))
+            ttk.Label(head, text=self.NAMES[kind], style='Muted.TLabel', background=U.PAPER).pack(side='left')
+        self.hint = tk.StringVar(value='Наведите на полосу — что делает система; щелчок — открыть кадр.')
+        ttk.Label(head, textvariable=self.hint, style='Muted.TLabel', background=U.PAPER).pack(side='right')
+        self.canvas = tk.Canvas(self, height=118, background=U.PAPER, highlightthickness=0)
+        self.canvas.pack(fill='x', pady=(4, 0))
+        self.items = {}
+        self.canvas.bind('<Configure>', lambda e: self.draw())
+        self.canvas.bind('<Motion>', self.motion)
+        self.canvas.bind('<Button-1>', self.click)
+
+    def draw(self):
+        c = self.canvas
+        c.delete('all')
+        self.items = {}
+        w = c.winfo_width()
+        if w < 100:
+            return
+        x0, x1 = 120, w - 14
+        total = self.data['total']
+        k = (x1 - x0) / total
+        rows = [(side, role) for side, _, role in SIDES if side in self.data['rows']]
+        top, h, gap = 16, 30, 14
+        # шкала времени
+        step = next(s for s in (5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600) if s * 1000 * k >= 70)
+        y_axis = top + len(rows) * (h + gap) - gap + 6
+        t = 0
+        while t * 1000 <= total:
+            x = x0 + t * 1000 * k
+            c.create_line(x, top - 4, x, y_axis, fill='#EEEAE0')
+            c.create_text(x, y_axis + 8, text=U.fmt_time(t * 1000).split('.')[0], fill=U.MUTED, font=(U.UI_FONT, 8))
+            t += step
+        for n, (side, role) in enumerate(rows):
+            y = top + n * (h + gap)
+            end = self.data['rows'][side][-1]['t1'] if self.data['rows'][side] else 0
+            c.create_text(8, y + h / 2 - 6, text='%s · %s' % (side, U.fmt_time(end)), anchor='w', fill=U.NAVY, font=(U.UI_FONT, 10, 'bold'))
+            c.create_text(8, y + h / 2 + 8, text=role, anchor='w', fill=U.MUTED, font=(U.UI_FONT, 8))
+            c.create_rectangle(x0, y, x1, y + h, fill='#F4F1EA', outline='')
+            last_tool, last_label = None, -100
+            for seg in self.data['rows'][side]:
+                a, b = x0 + seg['t0'] * k, x0 + seg['t1'] * k
+                if b - a < 0.4:
+                    continue
+                iid = c.create_rectangle(a, y, max(b, a + 1), y + h, fill=self.COLORS[seg['kind']], outline='',
+                                         stipple='gray50' if seg['kind'] == 'wait' else '')
+                self.items[iid] = (side, seg)
+                tool = seg.get('tool')
+                if seg['kind'] != 'wait' and tool and tool != last_tool and str(tool).strip('0'):
+                    c.create_line(a, y - 3, a, y + h, fill=U.NAVY)
+                    if a - last_label > 40:
+                        c.create_text(a + 2, y - 7, text='T' + str(tool), anchor='w', fill=U.NAVY, font=(U.UI_FONT, 7))
+                        last_label = a
+                    last_tool = tool
+        last_mark = -100
+        for tm, label in self.data['marks']:
+            x = x0 + tm * k
+            c.create_line(x, top - 2, x, top + len(rows) * (h + gap) - gap, fill=U.ERROR, dash=(3, 2))
+            if x - last_mark > 24:
+                c.create_text(x, top + len(rows) * (h + gap) - gap + 1, text='!' + label, anchor='n', fill=U.ERROR,
+                              font=(U.UI_FONT, 7, 'bold'))
+                last_mark = x
+
+    def at(self, e):
+        for iid in reversed(self.canvas.find_overlapping(e.x, e.y, e.x, e.y)):
+            if iid in self.items:
+                return self.items[iid]
+        return None
+
+    def motion(self, e):
+        hit = self.at(e)
+        if not hit:
+            return
+        side, seg = hit
+        self.hint.set('%s · %s–%s (%.1f с) · %s%s%s' % (
+            side, U.fmt_time(seg['t0']), U.fmt_time(seg['t1']), (seg['t1'] - seg['t0']) / 1000, self.NAMES[seg['kind']],
+            (' · T%s' % seg['tool']) if seg.get('tool') else '', (' · стр. %s' % seg['line']) if seg.get('line') else ''))
+
+    def click(self, e):
+        hit = self.at(e)
+        if not hit or hit[0] not in self.cards:
+            return
+        side, seg = hit
+        card = self.cards[side]
+        win = AutoSetupWindow(self.tab, card)
+        if seg.get('line'):
+            prog = seg.get('prog')
+            name = card['file'] if prog in (None, 'MAIN') else prog
+            win.book.select(3)
+            win.show_file(name, seg['line'])
 
 
 class AutoSetupWindow(MD.SetupWindow):
