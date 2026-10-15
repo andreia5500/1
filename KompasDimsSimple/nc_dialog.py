@@ -138,19 +138,27 @@ class NcWindow(tk.Toplevel):
         self.sims = []
         U.window(self, 'Проверка УП', 1360, 880, 1100, 680)
         self.transient(app)
-        right = U.header(self, 'Проверка УП', 'Время цикла и полная проверка кода · имитация Diamond CSB II/III (Mitsubishi)', icon='nc')
-        ttk.Button(right, text='Параметры станка…', style='Banner.TButton', command=self.edit_params).pack(side='right')
-        bar = ttk.Frame(self)
-        bar.pack(side='bottom', fill='x', padx=16, pady=(8, 12))
+        U.header(self, 'Проверка УП', 'Время цикла и проверка кода · токарный автомат Diamond, фрезерные HAAS VF-2/3 и IMV 10.55',
+                 icon='nc')
+        self.status = tk.StringVar(value='Автомат: откройте программы систем S1 и S2. HAAS / IMV: перетащите файлы .nc в окно.')
+        bottom = ttk.Frame(self)
+        bottom.pack(side='bottom', fill='x', padx=16, pady=(4, 12))
+        U.journal_button(bottom, self).pack(side='left')
+        ttk.Button(bottom, text='Закрыть', command=self.destroy).pack(side='right')
+        ttk.Label(bottom, textvariable=self.status, style='Muted.TLabel').pack(side='left', fill='x', padx=12)
+        self.machines = ttk.Notebook(self)
+        self.machines.pack(fill='both', expand=True, padx=16, pady=(10, 0))
+        page = ttk.Frame(self.machines)
+        self.machines.add(page, text='Автомат · Diamond')
+        bar = ttk.Frame(page)
+        bar.pack(side='bottom', fill='x', pady=(8, 0))
         ttk.Button(bar, text='Рассчитать время цикла', style='Accent.TButton', command=self.calculate).pack(side='right')
         ttk.Button(bar, text='Полная проверка кода', command=self.check).pack(side='right', padx=8)
-        ttk.Button(bar, text='Закрыть', command=self.destroy).pack(side='right', padx=(0, 8))
-        U.journal_button(bar, self).pack(side='left')
-        self.status = tk.StringVar(value='Шаг 1: откройте программы систем S1 и S2 (подпрограммы O5000–O5002 встроены, остальные M98 подгружаются из папки УП). '
-                                         'Шаг 2: «Рассчитать время цикла» или «Полная проверка кода».')
-        ttk.Label(self, textvariable=self.status, style='Muted.TLabel').pack(side='bottom', fill='x', padx=16)
-        panes = ttk.Panedwindow(self, orient='horizontal')
-        panes.pack(fill='both', expand=True, padx=16, pady=(12, 0))
+        ttk.Button(bar, text='Параметры станка…', command=self.edit_params).pack(side='left')
+        ttk.Label(bar, text='Подпрограммы O5000–O5002 встроены, остальные M98 подгружаются из папки УП.',
+                  style='Muted.TLabel').pack(side='left', padx=12)
+        panes = ttk.Panedwindow(page, orient='horizontal')
+        panes.pack(fill='both', expand=True, pady=(10, 0))
         left = ttk.Frame(panes)
         panes.add(left, weight=5)
         rightp = ttk.Frame(panes)
@@ -166,6 +174,8 @@ class NcWindow(tk.Toplevel):
         self.time_tab()
         self.check_tab()
         self.block_tab()
+        import mill_dialog
+        self.mill_tabs = mill_dialog.build_tabs(self, self.machines)
 
     # ------------------------------------------------------------ программы
     def system_tab(self, name, spindle):
@@ -213,8 +223,10 @@ class NcWindow(tk.Toplevel):
     def open_program(self, sys):
         path = filedialog.askopenfilename(parent=self, title='Программа %s' % sys['name'], filetypes=NC_TYPES,
                                           initialdir=self.last_dir)
-        if not path:
-            return
+        if path:
+            self.load_program(sys, path)
+
+    def load_program(self, sys, path):
         self.last_dir = str(Path(path).parent)
         text = read_nc(path)
         sys['editor'].set(text)
@@ -228,6 +240,13 @@ class NcWindow(tk.Toplevel):
             note += ' Не найдены: %s — добавьте на вкладке «Подпрограммы».' % ', '.join('O' + n for n in missing)
         self.status.set('Открыта %s.%s' % (Path(path).name, note))
         J.event('Открыта УП', system=sys['name'], path=path, subs_found=found, subs_missing=missing)
+
+    def drop_auto(self, paths):
+        files = [p for p in paths if Path(p).is_file()]
+        for sys, path in zip(self.systems, files):
+            self.load_program(sys, path)
+        if len(files) > len(self.systems):
+            self.status.set('Открыты %s в S1/S2; остальные файлы пропущены.' % ', '.join(Path(p).name for p in files[:2]))
 
     def called_subs(self, text, seen=None):
         out = []
