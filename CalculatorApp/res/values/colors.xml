@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#FF121418</color>
+    <color name="text">#FFF2F3F5</color>
+    <color name="text_dim">#FF8A9099</color>
+    <color name="btn_num">#FF262A31</color>
+    <color name="btn_fn">#FF3A3F48</color>
+    <color name="btn_op">#FF2E4A6B</color>
+    <color name="btn_op_text">#FF9CC8FF</color>
+    <color name="btn_eq">#FF4C8DFF</color>
+    <color name="ripple">#33FFFFFF</color>
+    <color name="error">#FFFF6B6B</color>
+</resources>

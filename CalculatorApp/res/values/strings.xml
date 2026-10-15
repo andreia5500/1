@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Калькулятор</string>
+    <string name="err_div_zero">Деление на ноль</string>
+    <string name="err_syntax">Ошибка</string>
+</resources>
