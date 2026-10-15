@@ -14,7 +14,7 @@ sudo apt-get install android-sdk-platform-23 aapt dalvik-exchange zipalign apksi
 ./build.sh        # -> build/Calculator.apk
 ```
 
-GitHub Actions (`.github/workflows/calculator-apk.yml`) собирает APK при каждом
+GitHub Actions (`.github/workflows/android-apk.yml`) собирает APK при каждом
 изменении в папке `CalculatorApp/` и прикладывает его к запуску как артефакт.
 
 `debug.keystore` — отладочный ключ подписи (пароль `android`), он хранится в
