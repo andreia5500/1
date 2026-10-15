@@ -34,6 +34,8 @@ final class HomeScreen {
         void openAllDevices();
 
         EntityAdapter favoritesAdapter();
+
+        void vkCommand(String command);
     }
 
     /** What the screen shows besides entity states. */
@@ -80,10 +82,13 @@ final class HomeScreen {
         }
         root.addView(header);
 
+        if (!m.online) {
+            add(vkCard(true)); // no internet to the house: VK is the way in
+        }
         if (m.entities.isEmpty()) {
             TextView t = ui.text(m.online ? "Загрузка дома…" : "Подключение…", 15, R.color.text_dim);
             t.setGravity(Gravity.CENTER);
-            t.setPadding(0, ui.dp(80), 0, 0);
+            t.setPadding(0, ui.dp(48), 0, 0);
             root.addView(t, ui.matchWidth());
             return;
         }
@@ -101,6 +106,49 @@ final class HomeScreen {
         View sensors = sensorsCard(all);
         if (sensors != null) add(sensors);
         addFavorites(m);
+        if (m.online) {
+            add(vkCard(false));
+        }
+    }
+
+    // ---- commands through VK ----------------------------------------------------------
+
+    private View vkCard(boolean offline) {
+        LinearLayout card = ui.card(R.drawable.card, 16, 18);
+        card.addView(ui.kicker("Команды через ВК"));
+        TextView sub = ui.text(offline
+                ? "Нет связи с домом. Команда уйдёт в группу ВК — вставьте её в чат и отправьте."
+                : "Если интернет до дома заблокирован, а ВК работает.", 13, R.color.text_dim);
+        sub.setLineSpacing(0, 1.15f);
+        card.addView(sub, ui.margins(ui.matchWidth(), 0, 6, 0, 4));
+        String[][] cmds = VkCommands.COMMANDS;
+        for (int i = 0; i < cmds.length; i += 2) {
+            LinearLayout row = ui.horizontal();
+            row.addView(vkButton(cmds[i], i == 0), ui.weight(1, 44));
+            row.addView(ui.spacer(9));
+            if (i + 1 < cmds.length) {
+                row.addView(vkButton(cmds[i + 1], false), ui.weight(1, 44));
+            } else {
+                row.addView(new View(ui.context), ui.weight(1, 44));
+            }
+            card.addView(row, ui.margins(ui.matchWidth(), 0, 9, 0, 0));
+        }
+        return card;
+    }
+
+    private View vkButton(final String[] cmd, boolean primary) {
+        TextView b = ui.button(cmd[1], primary ? R.drawable.btn_accent : R.drawable.btn_outline,
+                primary ? R.color.on_dark : R.color.text, 44);
+        b.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13.5f);
+        b.setPadding(ui.dp(8), 0, ui.dp(8), 0);
+        b.setContentDescription(cmd[1] + ", команда /" + cmd[0]);
+        b.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                host.vkCommand(cmd[0]);
+            }
+        });
+        return b;
     }
 
     private void add(View v) {
