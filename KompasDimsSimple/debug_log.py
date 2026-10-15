@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-VERSION='2.1.0'
+VERSION='2.1.1'
 _lock=threading.RLock()
 _local=threading.local()
 _memory=deque(maxlen=5000)
