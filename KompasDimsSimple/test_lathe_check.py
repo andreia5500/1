@@ -131,3 +131,20 @@ class Manual(unittest.TestCase):
         for sim, finish in zip(sims, rep['finishMs']):
             self.assertAlmostEqual(tl['rows'][sim.name][-1]['t1'], finish, places=3)
         self.assertEqual(len(tl['marks']), len(rep['barriers']))
+
+
+class WorkingPrograms(unittest.TestCase):
+    """Программы, которые работают на станке: проверка не должна находить в них ошибок (✖)."""
+    PAIRS = (('O2105', 'O2106'), ('O4009', 'O4010'), ('O4013', 'O4014'), ('O3105', 'O3106'), ('O6102',), ('O6103',))
+
+    def test_no_errors(self):
+        subs = {n: (PROG / ('O' + n)).read_text() for n in ('5000', '5001', '5002')}
+        for pair in self.PAIRS:
+            texts = [(PROG / n).read_text() for n in pair]
+            sims, _ = E.calculate([dict(name='S%d' % (i + 1), spindle=str(i + 1), text=t) for i, t in enumerate(texts)], subs)
+            errors = [f for f in E.sync_check(sims) if f['severity'] == 'error']
+            for name, t in zip(pair, texts):
+                errors += [f for f in E.validate_program(t, subs)[2] if f['severity'] == 'error']
+            names = {x['T']: x['name'] for x in A.tool_list(texts[0])}
+            errors += [i for i in L.analyze(sims[0], texts[0], names)['issues'] if i['severity'] == 'error']
+            self.assertEqual([e['message'][:120] for e in errors], [], pair)

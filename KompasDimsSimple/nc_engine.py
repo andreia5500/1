@@ -502,6 +502,7 @@ class Simulator:
         self._stmt = None
         self._g75_e = 0.0
         self._single = None
+        self._caxis = False     # M54 — ввод оси C (фрезерование/сверление вне оси), M55 — вывод
 
     # --- оси и шпиндели
     def axis_cfg(self, letter):
@@ -607,6 +608,7 @@ class Simulator:
         if len(pts) < 2 or any(x is None or z is None for x, z in pts):
             return
         st = self._stmt
+        info.setdefault('caxis', self._caxis)
         self.path.append(dict(kind=kind, pts=pts, line=st['lineNo'] if st else None, prog=self._ctx_name,
                               tool=self.current_tool_raw, plane=self.plane, info=info))
 
@@ -1061,6 +1063,10 @@ class Simulator:
             f_word = word('F')
             if f_word:
                 self.feed = eval_expr(f_word['valueExpr'], self.vars)
+            if 54 in m_words:
+                self._caxis = True
+            if 55 in m_words:
+                self._caxis = False
 
             if 4 in g_words:
                 dw = next((w for w in words if w['letter'] in ('X', 'U', 'P')), None)

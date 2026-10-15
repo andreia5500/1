@@ -50,8 +50,8 @@ def tool_size(name, kind):
             return d / 2
         return 0.5
     if kind == 'groove':
-        m = re.search(r'(?:H|B|W)\s*=?\s*(\d+(?:\.\d+)?)', up)
-        return float(m.group(1)) if m else 2.0
+        m = re.search(r'(?:H|B|W)\s*=\s*(\d+(?:\.\d+)?)', up) or re.search(r'(?:SHIR|ШИР)[A-ZА-Я]*\s*(\d+(?:\.\d+)?)', up)
+        return float(m.group(1)) if m else None
     return 0.0
 
 
@@ -129,6 +129,21 @@ def samples(p0, p1):
         yield z0 + (z1 - z0) * t, r0 + (r1 - r0) * t, x0 + (x1 - x0) * t
 
 
+def profile_rmax(profile, z):
+    """Наибольший радиус профиля в сечении z (внутренний контур - расточка)."""
+    best = None
+    for (xa, za), (xb, zb) in zip(profile, profile[1:]):
+        lo, hi = sorted((za, zb))
+        if lo - 1e-9 <= z <= hi + 1e-9:
+            if abs(zb - za) < 1e-9:
+                r = max(abs(xa), abs(xb)) / 2
+            else:
+                t = (z - za) / (zb - za)
+                r = abs(xa + (xb - xa) * t) / 2
+            best = r if best is None else max(best, r)
+    return best
+
+
 def profile_r(profile, z):
     """Наименьший радиус профиля в сечении z (для контура с припуском)."""
     best = None
@@ -154,7 +169,8 @@ def analyze(sim, text, names=None, bar_d=None):
         issues.append(dict(severity=sev, code=code, message=msg, line=line if line is not None else (seg or {}).get('line'),
                            prog=prog or (seg or {}).get('prog'), certain=certain, at=at))
 
-    path = [s for s in sim.path if s['plane'] == 18]
+    path = [s for s in sim.path if s['plane'] == 18 and not s['info'].get('caxis')]
+    by_line = tool_names(text)
     first_main = next((k for k, s in enumerate(path) if s['prog'] == 'MAIN' and s['kind'] in ('feed', 'groove', 'drill', 'cycle')), None)
     if first_main is not None:
         path = path[first_main:]
@@ -189,13 +205,14 @@ def analyze(sim, text, names=None, bar_d=None):
         if c['kind'] == 'G75':
             name = names.get(_t(c.get('tool')), '')
             width = tool_size(name, 'groove') if tool_kind(name) == 'groove' else None
-            if width and c['step'] > width + 1e-6:
+            if width and c['step'] > width + 1e-6:     # только если ширина пластины явно указана в названии (H=3. / B=3.)
                 add('warning', 'G75 Q', 'G75: шаг по Z Q%.3f больше ширины пластины %.3g мм (%s) - между врезаниями останутся '
                     'гребешки.' % (c['step'], width, name), line=c['line'], prog=c['prog'])
 
     for s in path:
         tool = _t(s.get('tool'))
-        name = names.get(tool, '')
+        name = name_at(by_line, tool, s['line']) if s['prog'] == 'MAIN' else names.get(tool, '')
+        name = name or names.get(tool, '')
         kind = tool_kind(name)
         if s['kind'] == 'rapid' and s['info'].get('cycle'):
             continue
@@ -209,14 +226,26 @@ def analyze(sim, text, names=None, bar_d=None):
                         key = (s['prog'], s['line'])
                         if key not in rapid_hits:
                             rapid_hits.add(key)
-                            add('error', 'G0 в материал', 'Ускоренный ход G0 проходит через материал заготовки (X%.3f Z%.3f, '
-                                'глубина %.2f мм) инструментом %s%s - врезание/авария. Проверьте точку подвода и '
-                                'предыдущие переходы.' % (x, z, depth, 'T' + tool if tool else '?', (' (%s)' % name) if name else ''),
-                                s, at=(x, z))
+                            deep = depth >= 1.0
+                            add('error' if deep else 'warning', 'G0 в материал',
+                                'Ускоренный ход G0 проходит через материал заготовки (X%.3f Z%.3f, глубина %.2f мм) инструментом '
+                                '%s%s - %s' % (x, z, depth, 'T' + tool if tool else '?', (' (%s)' % name) if name else '',
+                                               'врезание/авария. Проверьте точку подвода и предыдущие переходы.' if deep else
+                                               'неглубоко: возможно, это неточность модели (положение торца до подрезки, точка R). '
+                                               'Проверьте точку подвода.'),
+                                s, at=(x, z), certain=deep)
                         break
                 else:
                     continue
                 break
+            # раз инструмент прошёл (на станке он при этом снял металл) — убираем материал по пути,
+            # иначе следующие переходы дают ложные «врезания» в уже несуществующий металл
+            for a, b in zip(s['pts'], s['pts'][1:]):
+                if kind == 'drill' and abs(a[0]) < 0.3 and abs(b[0]) < 0.3:
+                    stock.cut_bore(max(a[1], b[1]), tool_size(name, 'drill'), min(a[1], b[1]))
+                elif (s['prog'], s['line']) in rapid_hits:
+                    for z, r, _ in samples(a, b):
+                        stock.cut_outer(z, r)
             continue
         if s['kind'] == 'thread':
             key = (s['prog'], s['line'])
@@ -228,11 +257,18 @@ def analyze(sim, text, names=None, bar_d=None):
             continue
         if s['kind'] == 'cycle':
             U, W = s['info'].get('U', 0) or 0, s['info'].get('W', 0) or 0
-            prof = [(x + U, z + W) for x, z in s['pts'][1:]]
+            x_start = abs(s['pts'][0][0])
+            inner_cycle = x_start < sum(abs(x) for x, _ in s['pts'][1:]) / max(1, len(s['pts']) - 1)
+            prof = [(abs(x) - abs(U) if inner_cycle else abs(x) + U, z + W) for x, z in s['pts'][1:]]
             zs = [z for _, z in prof]
             for i in range(stock.n):
                 z = stock.z_of(i)
                 if min(zs) - 1e-9 <= z <= max(zs) + 1e-9:
+                    if inner_cycle:
+                        r = profile_rmax(prof, z)
+                        if r is not None and r > stock.B[i]:
+                            stock.B[i] = min(r, stock.R[i])
+                        continue
                     r = profile_r(prof, z)
                     if r is not None and r < stock.R[i]:
                         stock.R[i] = max(r, stock.B[i])
@@ -254,7 +290,7 @@ def analyze(sim, text, names=None, bar_d=None):
                 else:
                     stock.cut_bore(max(a[1], b[1]), rd, min(a[1], b[1]))
                 continue
-            width = tool_size(name, 'groove') if (kind == 'groove' or s['kind'] == 'groove') else 0.0
+            width = (tool_size(name, 'groove') or 2.0) if (kind == 'groove' or s['kind'] == 'groove') else 0.0
             removed = 0.0
             inner = any(w in name.upper() for w in BORE_WORDS)
             if not inner:
@@ -289,8 +325,10 @@ def analyze(sim, text, names=None, bar_d=None):
         U, W = c.get('U') or 0, c.get('W') or 0
         if c['kind'] == 'G71' and abs(U) < 1e-9 and abs(W) < 1e-9:
             continue
-        x0 = c['start'][0]
-        prof = c['profile']
+        x0 = abs(c['start'][0])
+        prof = [(abs(x), z) for x, z in c['profile']]
+        if x0 < sum(x for x, _ in prof) / len(prof):     # внутренний контур - припуск не проверяем
+            continue
         bad = []
         for i in range(stock.n):
             z = stock.z_of(i)
@@ -312,9 +350,34 @@ def analyze(sim, text, names=None, bar_d=None):
     return dict(issues=issues, stock=stock, bar=bar_d, face=z_face)
 
 
+def tool_names(text):
+    """[(строка, T, название)] — каждое упоминание T с комментарием (на той же или следующей строке)."""
+    out = []
+    lines = (text or '').split('\n')
+    for k, raw in enumerate(lines):
+        code = re.sub(r'\([^)]*\)', '', raw)
+        for m in re.finditer(r'T(\d{3,4})', code):
+            note = re.search(r'\(([^)]*)\)', raw)
+            if not note and k + 1 < len(lines) and re.fullmatch(r'\s*\([^)]*\)\s*', lines[k + 1]):
+                note = re.search(r'\(([^)]*)\)', lines[k + 1])
+            if note and int(m.group(1)):
+                out.append((k + 1, m.group(1), note.group(1).strip()))
+    return out
+
+
+def name_at(by_line, tool, line):
+    """Название инструмента, действовавшее в строке line (последнее упоминание T с комментарием до неё)."""
+    best = ''
+    for ln, t, name in by_line:
+        if t == tool and (line is None or ln <= line):
+            best = name
+    return best
+
+
 def check_cycle_start(c, add, bar_d):
     x0, z0 = c['start']
-    prof = c['profile']
+    x0 = abs(x0)
+    prof = [(abs(x), z) for x, z in c['profile']]
     body = [p for p in prof if abs(p[0] - x0) > 1e-6 or abs(p[1] - z0) > 1e-6]
     if not body:
         return
@@ -338,8 +401,8 @@ def check_thread(c, stock, add):
     X, Z, h, lead, rpm = c['X'], c['Z'], c['height'], c['lead'], c['rpm']
     if not h or not lead:
         return
-    outer = X < x0
-    if not outer:
+    x0, X = abs(x0), abs(X)
+    if X >= x0:            # внутренняя резьба (резец идёт от оси наружу) — наружные проверки не применимы
         return
     major = X + 2 * h
     minor_r, major_r = X / 2, major / 2
@@ -351,9 +414,10 @@ def check_thread(c, stock, add):
                 crest * 2, major, X, h, (crest - major_r) * 2), line=line, prog=prog)
     top = max(crest, major_r)
     if x0 / 2 < top + 0.1:
-        add('error', 'G76 отвод', 'G76: точка начала X%.3f не выше вершин резьбы Ø%.3f - после каждого прохода резец '
+        below_major = x0 / 2 < major_r - 0.01
+        add('error' if below_major else 'warning', 'G76 отвод', 'G76: точка начала X%.3f не выше вершин резьбы Ø%.3f - после каждого прохода резец '
             'отводится только до X%.3f и ускоренно возвращается по Z, задевая вершины резьбы. Начало цикла - минимум '
-            'на 0,5-1 мм по диаметру выше.' % (x0, top * 2, x0), line=line, prog=prog)
+            'на 0,5-1 мм по диаметру выше.' % (x0, top * 2, x0), line=line, prog=prog, certain=below_major or None)
     if not c.get('chamfer'):
         # конец резьбы за канавкой под выход: впереди по ходу была зона Ø ≤ внутреннего (канавка),
         # а в точке конца снова материал - на последних проходах резец режет стенку канавки
@@ -375,10 +439,11 @@ def check_thread(c, stock, add):
                 in_relief = body * DZ >= 2 * lead
             if in_relief:
                 relief_end = stock.z_of(k)
-                add('error', 'G76 конец', 'G76: конец резьбы Z%.3f заходит за канавку под выход резьбы (Ø ≤ %.3f заканчивается на '
-                    'Z%.2f) - на последних проходах резец врезается в стенку канавки до Ø%.3f, на %.2f мм по радиусу. '
-                    'Конец резьбы должен быть в канавке (не дальше Z%.2f) или задайте выход фаской (P..xx..).' % (
-                        Z, X, relief_end, stock.R[i] * 2, stock.R[i] - minor_r, relief_end), line=line, prog=prog, at=(X, Z))
+                add('warning', 'G76 конец', 'G76: конец резьбы Z%.3f заходит за канавку под выход резьбы (Ø ≤ %.3f заканчивается на '
+                    'Z%.2f) - на последних проходах резец подрезает стенку канавки до Ø%.3f, на %.2f мм по радиусу. '
+                    'Если это сбег резьбы на скосе канавки - так и задумано; если стенка - посадочный бурт, конец резьбы '
+                    'нужен не дальше Z%.2f.' % (Z, X, relief_end, stock.R[i] * 2, stock.R[i] - minor_r, relief_end),
+                    line=line, prog=prog, at=(X, Z), certain=False)
     if rpm:
         need = lead * rpm / 1800 * 3.605
         start_mat = None

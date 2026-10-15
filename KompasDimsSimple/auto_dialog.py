@@ -196,6 +196,15 @@ class AutoTab(ttk.Frame):
                                  parent=self.owner)
             J.event('Автомат: больше двух программ', files=[p['name'] for p in programs])
             return
+        if len(programs) == 2:
+            sa, sb = side_score(programs[0]['text'])[0], side_score(programs[1]['text'])[0]
+            if sa * sb > 0:
+                messagebox.showerror('Проверка УП', 'Обе программы - для %s (%s, %s): у автомата одна программа главного шпинделя '
+                                     'и одна контршпинделя. Перетащите пару «главный + контршпиндель» или программы по одной.' % (
+                                         'главного шпинделя' if sa > 0 else 'контршпинделя', programs[0]['name'], programs[1]['name']),
+                                     parent=self.owner)
+                J.event('Автомат: две программы одного шпинделя', files=[p['name'] for p in programs])
+                return
         for s in subs:
             no = s['no']
             if no is None:
@@ -414,16 +423,18 @@ class AutoTab(ttk.Frame):
             for i in [c for c in r['cross'] if c['severity'] == 'error'][:3]:
                 ttk.Label(right, text='✖ ' + i['message'], background=U.PAPER, foreground=U.ERROR, wraplength=560,
                           justify='right').pack(anchor='e', pady=(2, 0))
+        cards = {c['side']: c for c in (r['cards'] if r else [])}
+        # диаграмму размещаем до карточек: иначе высокие карточки забирают всё место и полосы не видно
+        if r and r.get('timeline') and r['timeline']['total'] > 0:
+            box = ttk.Frame(self.body, style='Card.TFrame', padding=(14, 8))
+            box.pack(side='bottom', fill='x', pady=(10, 0))
+            Timeline(box, r['timeline'], cards, self).pack(fill='x')
         row = ttk.Frame(self.body)
         row.pack(fill='both', expand=True, pady=(10, 0))
         row.columnconfigure(0, weight=1, uniform='side')
         row.columnconfigure(1, weight=1, uniform='side')
         row.rowconfigure(0, weight=1)
         cards = {c['side']: c for c in (r['cards'] if r else [])}
-        if r and r.get('timeline') and r['timeline']['total'] > 0:
-            box = ttk.Frame(self.body, style='Card.TFrame', padding=(14, 8))
-            box.pack(side='bottom', fill='x', pady=(10, 0))
-            Timeline(box, r['timeline'], cards, self).pack(fill='x')
         for k, (side, _, role) in enumerate(SIDES):
             if side in cards:
                 w = self.card(row, cards[side])
