@@ -116,6 +116,7 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
     private String powerHistoryId;
     private VkCommands vk;
     private long powerHistoryAt;
+    private long shownMinute;
     private EditText search;
     private LinearLayout tabBar;
     private Tab tab = Tab.CONTROL;
@@ -126,6 +127,8 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
     private int pendingStates = -1;
 
     private String fullscreenCamera;
+    private MjpegStream liveStream;
+    private Dialog liveDialog;
     private ImageView fullscreenImage;
 
     @Override
@@ -209,13 +212,16 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
         }
         started = true;
         connect();
-        ui.postDelayed(cameraTicker, 10000);
+        ui.postDelayed(cameraTicker, 5000);
     }
 
     @Override
     protected void onStop() {
         super.onStop();
         started = false;
+        if (liveDialog != null) {
+            liveDialog.dismiss(); // stops the video stream too
+        }
         ui.removeCallbacksAndMessages(null);
         rebuildPending = false;
         flushTemperatures();
@@ -874,7 +880,12 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
             if (screen == Screen.CAMERAS && fullscreenCamera == null) {
                 camerasScreen.refreshImages(entities, cameraWidth());
             }
-            ui.postDelayed(this, 10000);
+            long minute = System.currentTimeMillis() / 60000;
+            if (screen == Screen.HOME && minute != shownMinute) {
+                shownMinute = minute;
+                scheduleRebuild(); // the clock in the header
+            }
+            ui.postDelayed(this, 5000);
         }
     };
 
@@ -1175,43 +1186,71 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
                 new String[]{"start", "pause", "stop", "return_to_base", "locate"});
     }
 
+    /** Full-screen live video (MJPEG) with the last snapshot shown until the first frame. */
     private void cameraDialog(final Entity e) {
+        FrameLayout frame = new FrameLayout(this);
+        frame.setBackgroundColor(0xFF000000);
         final ImageView image = new ImageView(this);
-        image.setBackgroundColor(0xFF000000);
         image.setScaleType(ImageView.ScaleType.FIT_CENTER);
         image.setImageBitmap(cameras.cached(e.id));
-        Dialog dialog = new Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
-        dialog.setContentView(image);
+        frame.addView(image, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+
+        LinearLayout top = uiKit.vertical();
+        top.setPadding(dp(20), dp(28), dp(20), dp(12));
+        TextView name = uiKit.text(e.name(), 20, R.color.on_dark);
+        name.setTypeface(Ui.MEDIUM);
+        top.addView(name);
+        final TextView live = uiKit.text("Подключение видео…", 12.5f, R.color.on_dark_dim);
+        top.addView(live, uiKit.margins(uiKit.wrap(), 0, 4, 0, 0));
+        frame.addView(top, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP));
+        TextView hint = uiKit.text("Нажмите, чтобы закрыть", 12, R.color.on_dark_dim);
+        FrameLayout.LayoutParams hlp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        hlp.bottomMargin = dp(28);
+        frame.addView(hint, hlp);
+
+        final Dialog dialog = new Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        dialog.setContentView(frame);
         fullscreenCamera = e.id;
         fullscreenImage = image;
-        final int width = getResources().getDisplayMetrics().widthPixels;
-        final Runnable refresh = new Runnable() {
+        cameras.request(e.id, 1280, true);
+
+        final MjpegStream stream = new MjpegStream(session, e.id,
+                Math.max(getResources().getDisplayMetrics().widthPixels, 1280), new MjpegStream.Listener() {
             @Override
-            public void run() {
-                if (e.id.equals(fullscreenCamera)) {
-                    cameras.request(e.id, Math.max(width, 1280), true);
-                    ui.postDelayed(this, 2000);
-                }
+            public void onFrame(Bitmap bmp, float fps) {
+                fullscreenImage = null; // live frames from now on, not snapshots
+                image.setImageBitmap(bmp);
+                live.setText(fps > 0 ? String.format(Locale.US, "● ЭФИР · %.1f к/с", fps) : "● ЭФИР");
             }
-        };
+
+            @Override
+            public void onStatus(String status) {
+                live.setText(status);
+            }
+        });
+        liveStream = stream;
+        stream.start();
         dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
             @Override
             public void onDismiss(DialogInterface d) {
+                stream.stop();
+                if (liveStream == stream) liveStream = null;
                 fullscreenCamera = null;
                 fullscreenImage = null;
-                ui.removeCallbacks(refresh);
+                liveDialog = null;
             }
         });
-        image.setOnClickListener(new View.OnClickListener() {
+        frame.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                fullscreenCamera = null;
-                ((Dialog) v.getTag()).dismiss();
+                dialog.dismiss();
             }
         });
-        image.setTag(dialog);
+        liveDialog = dialog;
         dialog.show();
-        refresh.run();
     }
 
     private void infoDialog(Entity e) {

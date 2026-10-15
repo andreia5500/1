@@ -413,8 +413,10 @@ final class HomeScreen {
         for (Entity e : entities.values()) {
             if (!"sensor".equals(e.domain) || !"power".equals(e.deviceClass()) || !e.primary()) continue;
             String n = e.name().toLowerCase();
-            int score = n.contains("электричеств") || n.contains("сеть") || n.contains("ввод") ? 3
-                    : n.contains("общ") ? 2 : e.available() ? 1 : 0;
+            int score = n.contains("общ") || n.contains("ввод") || n.contains("сеть") ? 3
+                    : n.contains("электричеств") ? 2 : e.available() ? 1 : 0;
+            // A meter that has not changed for an hour is stuck (e.g. its integration dropped).
+            if (e.available() && System.currentTimeMillis() - e.lastChanged < 3600000L) score += 10;
             if (score > bestScore) {
                 best = e;
                 bestScore = score;

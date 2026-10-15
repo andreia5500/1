@@ -275,9 +275,11 @@ final class CamerasScreen {
 
     /** Re-requests snapshots for the visible tiles. */
     void refreshImages(Map<String, Entity> entities, int width) {
-        for (String id : images.keySet()) {
-            Entity e = entities.get(id);
-            if (e != null) host.cameraImage(e, width);
+        android.graphics.Rect visible = new android.graphics.Rect();
+        for (Map.Entry<String, ImageView> en : images.entrySet()) {
+            Entity e = entities.get(en.getKey());
+            // Only tiles on screen: saves mobile data with many cameras.
+            if (e != null && en.getValue().getLocalVisibleRect(visible)) host.cameraImage(e, width);
         }
     }
 }

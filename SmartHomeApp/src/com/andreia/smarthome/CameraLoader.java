@@ -24,7 +24,7 @@ final class CameraLoader {
         void onCameraImage(String entityId);
     }
 
-    private static final long STALE_MS = 10000;
+    private static final long STALE_MS = 5000;
 
     private final HaSession session;
     private final Listener listener;
