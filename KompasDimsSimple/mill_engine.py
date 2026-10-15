@@ -420,6 +420,7 @@ class MillSim:
         self.prog = dict(self.work_of_mach())
         self.cur = None
         self.span = {a: [math.inf, -math.inf] for a in AXES}
+        self.path = []          # для прорисовки: dict(kind, pts=[(x, y, z) от нуля детали], line, file, tool)
 
     # -------------------------------------------------- журнал
     def add(self, ms, cat, note=None):
@@ -530,6 +531,21 @@ class MillSim:
             self.span[a][0] = min(self.span[a][0], v)
             self.span[a][1] = max(self.span[a][1], v)
 
+    # -------------------------------------------------- траектория
+    def work_pt(self, m):
+        pz = self.p['part_zero']
+        return (m['X'] - pz['X'], m['Y'] - pz['Y'], m['Z'] - pz['Z'])
+
+    def record(self, kind, machs):
+        if len(machs) < 2:
+            return
+        if kind == 'rapid' and any(m['Z'] > -1.0 for m in machs):   # подъём в точку смены / G53 Z0 — не рисуем
+            return
+        b = self.cur['block'] if self.cur else None
+        pr = self.cur['prog'] if self.cur else None
+        self.path.append(dict(kind=kind, pts=[self.work_pt(m) for m in machs], line=b and b['line'], file=pr and pr['file'],
+                              tool=str(self.st['T']) if self.st['T'] is not None else None))
+
     # -------------------------------------------------- движение
     def rapid_to(self, mach, note='G0'):
         ovr = max(1.0, float(self.p['rapid_override_pct'])) / 100.0
@@ -539,6 +555,7 @@ class MillSim:
             if d > 1e-9:
                 rate = self.p['rapid'].get(a, 10000) * ovr
                 worst = max(worst, move_time_ms(d, rate, self.p['accel_ms']))
+        self.record('rapid', [dict(self.mach), dict(mach)])
         self.mach = dict(mach)
         self.st['last_dir'] = None
         self.add(worst, 'rapid', note)
@@ -599,6 +616,7 @@ class MillSim:
             u = [x / length for x in d[:3]] if lin > 1e-9 else [0, 0, 0]
             ms += self.corner_ms(u)
             self.st['last_dir'] = u
+        self.record('feed', [dict(self.mach), dict(mach)])
         self.mach = mach
         self.prog = prog
         self.note_span(prog)
@@ -661,6 +679,16 @@ class MillSim:
             return [v['X'], v['Y'], v['Z']]
         ms += self.corner_ms(tangent(ang_s))
         self.st['last_dir'] = tangent(ang_e)
+        n = max(2, int(math.degrees(sweep) / 6) + 1)
+        pts = []
+        for k in range(n + 1):
+            ang = ang_s + (-1 if cw else 1) * sweep * k / n
+            q = dict(self.prog)
+            q[a1], q[a2] = o1 + radius * math.cos(ang), o2 + radius * math.sin(ang)
+            q[a3] = self.prog[a3] + helix * k / n
+            pts.append(self.to_mach(q))
+        pts[-1] = self.to_mach(prog)
+        self.record('feed', [dict(self.mach)] + pts[1:])
         self.mach = self.to_mach(prog)
         self.prog = prog
         self.note_span(prog)
@@ -764,8 +792,11 @@ class MillSim:
             self.add(dwell, 'dwell')
             self.add(rapid(depth), 'rapid')
         self.st['last_dir'] = None
+        bottom = self.to_mach(dict(pos, Z=z))
+        self.record('drill', [self.to_mach(pos_r), bottom])
         # 3. возврат G98 / G99
         end_z = b if st['ret'] == 98 else r
+        self.record('rapid', [bottom, self.to_mach(dict(pos, Z=end_z))])
         if st['ret'] == 98 and end_z > r:
             self.add(rapid(end_z - r), 'rapid')
         final = dict(pos, Z=end_z)
@@ -1503,6 +1534,16 @@ def analyze(files, params):
         for key in sim.executed:
             called.add((key[0], key[1]))
         issues = static_checks(prog, machine) + sim.issues + [i for i in notes if i['file'] == prog['file']]
+        seen_low = set()
+        for seg in sim.path:
+            if seg['kind'] != 'rapid':
+                continue
+            (x0, y0, z0), (x1, y1, z1) = seg['pts'][0], seg['pts'][-1]
+            if max(z0, z1) < -0.5 and math.hypot(x1 - x0, y1 - y0) > 1.0 and (seg['file'], seg['line']) not in seen_low:
+                seen_low.add((seg['file'], seg['line']))
+                issues.append(issue('warning', 'G0 ниже Z0', 'Ускоренное перемещение по XY на Z%.2f - ниже верха детали (Z0). '
+                                    'Если здесь не выбранный карман/паз - инструмент врежется в деталь.' % max(z0, z1),
+                                    seg['file'], prog['no'], seg['line'], certain=False))
         dead = dead_code(prog, sim.executed)
         if dead:
             first, last = dead[0], dead[-1]
@@ -1515,7 +1556,7 @@ def analyze(files, params):
         setups.append(dict(no=prog['no'], title=prog['title'], file=prog['file'], ms=sim.t, cat=dict(sim.cat),
                            tools=summarize(sim, prog), blocks=sim.blocks, issues=issues, alt_ms=alt_ms,
                            block_skip=params['block_skip'], incomplete=sim.incomplete, stops=sim.stops,
-                           span={a: tuple(v) for a, v in sim.span.items() if v[0] <= v[1]}))
+                           span={a: tuple(v) for a, v in sim.span.items() if v[0] <= v[1]}, path=sim.path))
     subs = []
     for p in programs:
         if p['kind'] == 'sub':

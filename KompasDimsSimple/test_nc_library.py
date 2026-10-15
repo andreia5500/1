@@ -17,7 +17,7 @@ class Library(unittest.TestCase):
         sims, rep = E.calculate([dict(name='S1', spindle='1', text=(prog / 'O6108').read_text()),
                                  dict(name='S2', spindle='2', text=(prog / 'O6109').read_text())],
                                 {n: s['text'] for n, s in subs.items()})
-        self.assertAlmostEqual(rep['totalMs'], 332863.1915513018, places=6)
+        self.assertAlmostEqual(rep['totalMs'], 309283.1915513018, places=6)
         self.assertFalse(any('не загружена' in w for s in sims for w in s.warnings))
 
     def test_added_subprogram_is_remembered(self):

@@ -10,6 +10,10 @@ import math
 import re
 
 INF = float('inf')
+STD_PITCHES = [0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.75, 0.8, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 3.5, 4.0,
+               4.5, 5.0, 5.5, 6.0] + [25.4 / n for n in (4, 4.5, 5, 6, 7, 8, 9, 10, 11, 11.5, 12, 13, 14, 16, 18, 19, 20,
+                                                          24, 27, 28, 32, 36, 40, 44, 48, 56, 64, 72, 80)]
+SYNC_G = {110, 111, 112, 113, 114.1, 114.2, 114.3, 125, 126}
 
 
 # ---------------------------------------------------------------- помощники JS
@@ -486,6 +490,13 @@ class Simulator:
         self._zero_feed_warned = False
         self.last_thread_passes = None
         self.incomplete = False
+        # траектория для прорисовки и проверки врезаний (на время не влияет)
+        self.path = []          # dict(kind, pts=[(X диаметр, Z)], line, prog, tool, plane, info)
+        self.cycles = []        # профили G71/G72/G73, резьбы G76, канавки G74/G75
+        self.ppos = {'X': None, 'Z': None}   # None — в исходной точке (после G28)
+        self._ctx_name = 'MAIN'
+        self._stmt = None
+        self._g75_e = 0.0
 
     # --- оси и шпиндели
     def axis_cfg(self, letter):
@@ -582,6 +593,59 @@ class Simulator:
         rate = self.eff_rapid(cfg.get('rapid_rate_mm_min') or 30000)
         return base + js_div(dist, rate) * 60000
 
+    # --- траектория
+    def seg(self, kind, pts, **info):
+        pts = [(x, z) for x, z in pts]
+        if len(pts) < 2 or any(x is None or z is None for x, z in pts):
+            return
+        st = self._stmt
+        self.path.append(dict(kind=kind, pts=pts, line=st['lineNo'] if st else None, prog=self._ctx_name,
+                              tool=self.current_tool_raw, plane=self.plane, info=info))
+
+    @staticmethod
+    def pq_labels(ctx, ip, P, Q):
+        """Номера профиля P/Q: ближайший кадр N после кадра цикла (как поиск на станке вперёд),
+        если впереди нет — первый в программе. Возвращает {ключ P: индекс, ключ Q: индекс}."""
+        out = {}
+        allp = ctx.get('label_all') or {}
+        kp, kq = js_key(P), js_key(Q) if Q is not None else None
+        p_list = allp.get(kp) or []
+        p_idx = next((i for i in p_list if i > ip), p_list[0] if p_list else None)
+        if p_idx is not None:
+            out[kp] = p_idx
+        if kq is not None:
+            q_list = allp.get(kq) or []
+            base = p_idx if p_idx is not None else ip
+            q_idx = next((i for i in q_list if i > base), q_list[0] if q_list else None)
+            if q_idx is not None:
+                out[kq] = q_idx
+        return out
+
+    def profile_pts(self, stmts, start, end, x0, z0):
+        """Точки контура профиля N(P)..N(Q) — с дугами, для прорисовки и проверок."""
+        pts = []
+        x, z = x0, z0
+        motion = 1
+        for idx in range(start, end + 1):
+            words = [t for t in stmts[idx]['tokens'] if t['type'] == 'word']
+            vals = {}
+            for w in words:
+                v = eval_expr(w['valueExpr'], self.vars)
+                if w['letter'] == 'G' and v in (0, 1, 2, 3):
+                    motion = v
+                elif w['letter'] in 'XZUWRIK':
+                    vals[w['letter']] = v
+            nx = vals['X'] if 'X' in vals else (x + vals['U'] if 'U' in vals and x is not None else x)
+            nz = vals['Z'] if 'Z' in vals else (z + vals['W'] if 'W' in vals and z is not None else z)
+            if nx == x and nz == z:
+                continue
+            if motion in (2, 3) and x is not None and z is not None:
+                pts.extend(arc_points((x, z), (nx, nz), motion == 2, vals.get('R'), vals.get('I'), vals.get('K'))[1:])
+            else:
+                pts.append((nx, nz))
+            x, z = nx, nz
+        return pts
+
     # --- постоянные циклы
     def canned_drill(self, tokens, gcode, line_no):
         depth_axis = next((ax for ax in ('Z', 'X', 'Y') if any(t.get('letter') == ax and t['type'] != 'indexed' for t in tokens)), None)
@@ -675,6 +739,18 @@ class Simulator:
             t[0] += move_time_ms(total, self.eff_rapid(rapid), accel)
         self.add_cut(cut[0])
         self.pos[depth_axis] = r_val
+        if depth_axis in ('X', 'Z'):
+            x0, z0 = self.ppos['X'], self.ppos['Z']
+            start = z0 if depth_axis == 'Z' else x0
+            if start is not None:
+                rpt = start + (r_val or 0)
+                if depth_axis == 'Z':
+                    a, b, c = (x0, start), (x0, rpt), (x0, depth_val)
+                else:
+                    a, b, c = (start, z0), (rpt, z0), (depth_val, z0)
+                self.seg('rapid', [a, b])
+                self.seg('drill', [b, c], peck=q_val, gcode=gcode)
+                self.seg('rapid', [c, a])
         return t[0]
 
     def _contour(self, stmts, start, end):
@@ -786,11 +862,12 @@ class Simulator:
     @staticmethod
     def make_ctx(text, name):
         stmts = parse_program(text)
-        labels = {}
+        labels, label_all = {}, {}
         for idx, s in enumerate(stmts):
             if s['nLabel'] is not None:
                 labels.setdefault(js_key(s['nLabel']), idx)
-        return dict(stmts=stmts, labels=labels, pairs=find_loop_pairs(stmts), name=name)
+                label_all.setdefault(js_key(s['nLabel']), []).append(idx)
+        return dict(stmts=stmts, labels=labels, label_all=label_all, pairs=find_loop_pairs(stmts), name=name)
 
     def run(self, program_text):
         ctx = self.make_ctx(program_text, 'MAIN')
@@ -810,6 +887,8 @@ class Simulator:
                     continue
                 break
             stmt = stmts[ip]
+            self._stmt = stmt
+            self._ctx_name = ctx['name']
             if stmt['nLabel'] is not None:
                 self.current_section = 'N' + stmt['nLabel']
             jump = None
@@ -963,9 +1042,14 @@ class Simulator:
             if g71 is not None:
                 facing = g71 == 72
                 if word('P'):
-                    res = self.roughing_cycle(stmts, labels, word('P')['valueExpr'], word('Q')['valueExpr'] if word('Q') else None,
-                                              wval('U'), wval('F', 0.2) if f_word else 0.2,
-                                              (self._pending_g71 or {}).get('depth') or 1.4, facing)
+                    depth = (self._pending_g71 or {}).get('depth') or 1.4
+                    x0, z0 = self.ppos['X'], self.ppos['Z']
+                    pq = self.pq_labels(ctx, ip, word('P')['valueExpr'], word('Q')['valueExpr'] if word('Q') else None)
+                    res = self.roughing_cycle(stmts, pq, word('P')['valueExpr'], word('Q')['valueExpr'] if word('Q') else None,
+                                              wval('U'), wval('F', 0.2) if f_word else 0.2, depth, facing)
+                    if res.get('start') is not None:
+                        self.rough_path(stmts, res['start'], res['jumpTo'] - 1, x0, z0, depth, wval('U', 0) or 0, wval('W', 0) or 0,
+                                        facing, 'G72' if facing else 'G71')
                     move_ms += res['timeMs']
                     notes.append('%s черновой цикл: %d прох. x %sмм' % (res['gLabel'], res['passes'], fixed(res['contourLen'], 2)))
                     self._pending_g71 = None
@@ -982,8 +1066,12 @@ class Simulator:
             elif 73 in g_words:
                 if word('P'):
                     pend = self._pending_g73 or {}
-                    res = self.pattern_repeat_cycle(stmts, labels, word('P')['valueExpr'], word('Q')['valueExpr'] if word('Q') else None,
+                    x0, z0 = self.ppos['X'], self.ppos['Z']
+                    pq = self.pq_labels(ctx, ip, word('P')['valueExpr'], word('Q')['valueExpr'] if word('Q') else None)
+                    res = self.pattern_repeat_cycle(stmts, pq, word('P')['valueExpr'], word('Q')['valueExpr'] if word('Q') else None,
                                                     wval('F', 0.2) if f_word else 0.2, pend.get('repeats') or 1)
+                    if res.get('start') is not None:
+                        self.repeat_path(stmts, res['start'], res['jumpTo'] - 1, x0, z0, pend, wval('U', 0) or 0, wval('W', 0) or 0)
                     move_ms += res['timeMs']
                     notes.append('G73 повтор образца: %d прох. x %sмм' % (res['passes'], fixed(res['contourLen'], 2)))
                     self._pending_g73 = None
@@ -995,19 +1083,33 @@ class Simulator:
                         ip = res['jumpTo'] if res['jumpTo'] > ip else ip + 1
                         continue
                 else:
-                    self._pending_g73 = dict(repeats=wval('R', 1))
+                    self._pending_g73 = dict(repeats=wval('R', 1), U=wval('U', 0) or 0, W=wval('W', 0) or 0)
                     notes.append('G73 (параметры повтора)')
             elif 76 in g_words:
                 if word('X') or word('Z'):
                     x = wval('X', self.pos.get('X'))
                     z = wval('Z', self.pos.get('Z'))
                     before = self.pos.get('Z')
+                    pend76 = dict(self._pending_g76 or {})
+                    rpm76 = self.current_rpm()
                     move_ms += self.threading_cycle(x, z, wval('P', 1), wval('Q'), wval('F', 1) if f_word else 1)
+                    self.thread_path(x, z, wval('P', 1), wval('Q'), wval('F', 1) if f_word else 1, pend76, rpm76)
                     notes.append('G76 резьба: длина %sмм, проходов %d' % (fixed(abs(z - before), 2), self.last_thread_passes))
                 else:
                     p_raw = js_round(wval('P')) if word('P') else 10000
-                    self._pending_g76 = dict(m=math.floor(p_raw / 10000) or 1, dmin=wval('Q', 0), finish=wval('R', 0))
+                    self._pending_g76 = dict(m=math.floor(p_raw / 10000) or 1, dmin=wval('Q', 0), finish=wval('R', 0),
+                                             chamfer=(p_raw // 100) % 100, angle=p_raw % 100)
                     notes.append('G76 (параметры: чистовых %d)' % self._pending_g76['m'])
+            elif any(g in (74, 75) for g in g_words):
+                g7x = next(g for g in g_words if g in (74, 75))
+                if word('X') or word('Z') or word('U') or word('W'):
+                    t75, n75 = self.groove_cycle(g7x, wval('X', None), wval('Z', None), wval('U'), wval('W'), wval('P', 0) or 0,
+                                                 wval('Q', 0) or 0, wval('F') if f_word else None)
+                    move_ms += t75
+                    notes.append('G%d цикл канавки/торцевого сверления: %d врезаний' % (g7x, n75))
+                else:
+                    self._g75_e = wval('R', 0) or 0
+                    notes.append('G%d (отвод e=%s)' % (g7x, js_num(self._g75_e)))
             elif g8x is not None:
                 move_ms += self.canned_drill(words, g8x, stmt['lineNo'])
                 notes.append('G%s цикл сверления/нарезания' % js_num(g8x))
@@ -1032,8 +1134,14 @@ class Simulator:
                     rr = cfg.get('rapid_rate_mm_min') or cfg.get('rapid_rate_deg_min') or 0
                     mx = max(mx, move_time_ms(abs(self.phys_dist(ax, home - self.pos[ax])), self.eff_rapid(rr), accel_of(cfg, 'g0_accel_ms', 100)))
                     self.pos[ax] = home
+                    if ax in self.ppos:
+                        self.ppos[ax] = None
                 move_ms += mx
                 notes.append('G28 в реф. точку (%s)' % ','.join(axes) if axes else 'G28 ориентация шпинделя')
+            elif any(g in SYNC_G for g in g_words):
+                # G125 Z2 / G114.1 / G113 … — управление синхронизацией и совмещением осей,
+                # адреса осей в этих кадрах — номера осей, а не перемещение
+                notes.append('G%s управление синхронизацией осей' % js_num(next(g for g in g_words if g in SYNC_G)))
             else:
                 deltas = {}
                 for w in words:
@@ -1076,6 +1184,22 @@ class Simulator:
                         move_ms += t
                         self.add_cut(t)
                         notes.append('G0%d len=%s feed=%s %sмс' % (int(self.motion), fixed(length, 3), fixed(vmax, 0) if math.isfinite(vmax) else js_num(vmax), fixed(t, 1)))
+                    x0, z0 = self.ppos['X'], self.ppos['Z']
+                    x1 = (self.pos['X'] + deltas['X']) if 'X' in deltas else x0
+                    z1 = (self.pos['Z'] + deltas['Z']) if 'Z' in deltas else z0
+                    if 'X' in deltas and x0 is None and not word('X'):
+                        x1 = None
+                    if 'Z' in deltas and z0 is None and not word('Z'):
+                        z1 = None
+                    if (x1, z1) != (x0, z0):
+                        if self.motion == 0:
+                            self.seg('rapid', [(x0, z0), (x1, z1)])
+                        elif self.motion in (2, 3) and None not in (x0, z0, x1, z1):
+                            self.seg('feed', arc_points((x0, z0), (x1, z1), self.motion == 2, wval('R'), wval('I'), wval('K')),
+                                     feed=self.feed, fpr=self.feed_per_rev)
+                        else:
+                            self.seg('feed', [(x0, z0), (x1, z1)], feed=self.feed, fpr=self.feed_per_rev)
+                    self.ppos['X'], self.ppos['Z'] = x1, z1
                     for ax, d in deltas.items():
                         if math.isfinite(d):
                             self.pos[ax] += d
@@ -1137,6 +1261,122 @@ class Simulator:
             ip += 1
         self.tail_ms = self.seg_ms
 
+    def rough_path(self, stmts, start, end, x0, z0, depth, U, W, facing, label):
+        if x0 is None or z0 is None:
+            return
+        prof = self.profile_pts(stmts, start, end, x0, z0)
+        if not prof:
+            return
+        self.cycles.append(dict(kind=label, line=self._stmt['lineNo'], prog=self._ctx_name, tool=self.current_tool_raw,
+                                start=(x0, z0), profile=prof, U=U, W=W, depth=depth))
+        step = max(depth or 1, 0.05)
+        if facing:
+            zs = [p[1] for p in prof]
+            sign = 1 if sum(zs) / len(zs) > z0 else -1
+            level, limit = z0 + sign * step, (max(zs) if sign > 0 else min(zs))
+            n = 0
+            while (level - limit) * sign < -1e-9 and n < 400:
+                xc = _cross(prof, 1, level, x0)
+                self.seg('cycle', [(x0, level), (xc, level)], feed=self.feed, fpr=self.feed_per_rev)
+                self.seg('rapid', [(xc, level), (x0, level)], cycle=True)
+                level += sign * step
+                n += 1
+        else:
+            xs = [p[0] for p in prof]
+            sign = -1 if sum(xs) / len(xs) < x0 else 1
+            level, limit = x0 + sign * 2 * step, (min(xs) if sign < 0 else max(xs))
+            n = 0
+            while (level - limit) * sign < -1e-9 and n < 400:
+                zc = _cross(prof, 0, level, z0)
+                self.seg('cycle', [(level, z0), (level, zc)], feed=self.feed, fpr=self.feed_per_rev)
+                self.seg('rapid', [(level, zc), (level - sign * 0.5, zc), (level - sign * 0.5, z0)], cycle=True)
+                level += sign * 2 * step
+                n += 1
+        self.seg('cycle', [(x0, z0)] + prof, feed=self.feed, profile=label, U=U, W=W)
+        self.seg('rapid', [prof[-1], (x0, z0)], cycle=True)
+
+    def repeat_path(self, stmts, start, end, x0, z0, pend, U, W):
+        if x0 is None or z0 is None:
+            return
+        prof = self.profile_pts(stmts, start, end, x0, z0)
+        if not prof:
+            return
+        self.cycles.append(dict(kind='G73', line=self._stmt['lineNo'], prog=self._ctx_name, tool=self.current_tool_raw,
+                                start=(x0, z0), profile=prof, U=U, W=W))
+        n = max(1, js_round(pend.get('repeats') or 1))
+        du, dw = 2 * (pend.get('U') or 0), pend.get('W') or 0
+        for k in range(n):
+            f = (n - 1 - k) / (n - 1) if n > 1 else 0
+            shifted = [(x + du * f + U, z + dw * f + W) for x, z in prof]
+            self.seg('cycle', [(x0, z0)] + shifted, feed=self.feed, profile='G73', U=0, W=0)
+            self.seg('rapid', [shifted[-1], (x0, z0)], cycle=True)
+
+    def thread_path(self, X, Z, P, Q, F, pend, rpm):
+        x0, z0 = self.ppos['X'], self.ppos['Z']
+        if x0 is None or z0 is None:
+            return
+        height = abs(P or 0)
+        info = dict(start=(x0, z0), X=X, Z=Z, height=height, lead=F, rpm=rpm, chamfer=pend.get('chamfer', 0),
+                    first=abs(Q or 0), line=self._stmt['lineNo'], prog=self._ctx_name, tool=self.current_tool_raw)
+        self.cycles.append(dict(kind='G76', **info))
+        n = max(1, self.last_thread_passes or 1)
+        major = X + 2 * height
+        for k in range(1, n + 1):
+            d = min(height, height * math.sqrt(k / n))
+            xd = major - 2 * d
+            self.seg('rapid', [(x0, z0), (xd, z0)], cycle=True)
+            self.seg('thread', [(xd, z0), (xd, Z)], lead=F)
+            self.seg('rapid', [(xd, Z), (x0, Z), (x0, z0)], cycle=True)
+        self.ppos['X'], self.ppos['Z'] = x0, z0
+
+    def groove_cycle(self, g, X, Z, U, W, P, Q, F):
+        """G75 (канавки по X с шагом по Z) / G74 (торцевое сверление по Z с шагом по X): время и путь."""
+        x0, z0 = self.ppos['X'], self.ppos['Z']
+        sx = self.pos.get('X') or 0
+        sz = self.pos.get('Z') or 0
+        if X is None:
+            X = sx + (U or 0)
+        if Z is None:
+            Z = sz + (W or 0)
+        if F is not None:
+            self.feed = F
+        e = abs(self._g75_e or 0)
+        cfg = self.axis_cfg('X') or {}
+        rapid = self.eff_rapid(cfg.get('rapid_rate_mm_min') or 24000)
+        accel = accel_of(cfg, 'g0_accel_ms', 100)
+        if g == 75:
+            plunge = abs(sx - X) / 2
+            shift_len, step, peck = abs(Z - sz), abs(Q or 0), abs(P or 0)
+            rpm = self.current_rpm((sx + X) / 2)
+        else:
+            plunge = abs(sz - Z)
+            shift_len, step, peck = abs(X - sx) / 2, abs(P or 0), abs(Q or 0)
+            rpm = self.current_rpm(sx)
+        feed = max((self.feed or 0.1) * rpm if self.feed_per_rev else (self.feed or 100), 1)
+        n_pos = (int(math.floor(shift_len / step + 1e-9)) + 1 + (1 if step and shift_len % step > 1e-6 else 0)) if step > 0 else 1
+        pecks = max(1, math.ceil(plunge / peck - 1e-9)) if peck > 0 else 1
+        cut_len = plunge + (pecks - 1) * e
+        t_cut = n_pos * cut_len / feed * 60000
+        t_rapid = n_pos * (move_time_ms(plunge, rapid, accel) + (pecks - 1) * 2 * move_time_ms(e, rapid, accel)) + \
+            max(0, n_pos - 1) * move_time_ms(step, rapid, accel)
+        self.add_cut(t_cut)
+        if x0 is not None and z0 is not None:
+            info = dict(start=(x0, z0), X=X, Z=Z, step=step, peck=peck, e=e, line=self._stmt['lineNo'], prog=self._ctx_name,
+                        tool=self.current_tool_raw, g=g)
+            self.cycles.append(dict(kind='G%d' % g, **info))
+            for k in range(n_pos):
+                if g == 75:
+                    zk = z0 + (min(k * step, shift_len) if Z >= z0 else -min(k * step, shift_len))
+                    self.seg('rapid', [(x0, z0), (x0, zk)])
+                    self.seg('groove', [(x0, zk), (X, zk)], feed=self.feed, fpr=self.feed_per_rev)
+                    self.seg('rapid', [(X, zk), (x0, zk)])
+                else:
+                    xk = x0 + (min(2 * k * step, abs(X - x0)) * (1 if X >= x0 else -1))
+                    self.seg('rapid', [(x0, z0), (xk, z0)])
+                    self.seg('groove', [(xk, z0), (xk, Z)], feed=self.feed, fpr=self.feed_per_rev)
+                    self.seg('rapid', [(xk, Z), (xk, z0)])
+        return t_cut + t_rapid, n_pos
+
     def _return(self, stack, ctx):
         fr = stack.pop()
         if fr['repeatsLeft'] > 1:
@@ -1163,6 +1403,50 @@ class Simulator:
             return chord
         c = max(-1, min(1, 1 - (chord * chord) / (2 * radius * radius)))
         return radius * math.acos(c)
+
+
+def arc_points(p0, p1, cw, R=None, I=None, K=None, step_deg=6):
+    """Дуга в плоскости ZX (X — диаметр) как ломаная. G2 — по часовой при Z вправо, X вверх."""
+    (x0, z0), (x1, z1) = p0, p1
+    a0, b0, a1, b1 = z0, x0 / 2, z1, x1 / 2
+    if I is not None or K is not None:
+        ca, cb = a0 + (K or 0), b0 + (I or 0)
+    elif R:
+        chord = math.hypot(a1 - a0, b1 - b0)
+        r = abs(R)
+        if chord < 1e-9:
+            return [p0, p1]
+        h = math.sqrt(max(0.0, r * r - chord * chord / 4))
+        ma, mb = (a0 + a1) / 2, (b0 + b1) / 2
+        na, nb = -(b1 - b0) / chord, (a1 - a0) / chord
+        side = (-1 if cw else 1) * (1 if R > 0 else -1)
+        ca, cb = ma + side * h * na, mb + side * h * nb
+    else:
+        return [p0, p1]
+    r = math.hypot(a0 - ca, b0 - cb)
+    s0, s1 = math.atan2(b0 - cb, a0 - ca), math.atan2(b1 - cb, a1 - ca)
+    sweep = (s0 - s1) if cw else (s1 - s0)
+    sweep %= 2 * math.pi
+    if sweep < 1e-9:
+        sweep = 2 * math.pi if (I is not None or K is not None) else 0
+    n = max(2, int(math.degrees(sweep) / step_deg) + 1)
+    out = []
+    for k in range(n + 1):
+        ang = s0 + (-1 if cw else 1) * sweep * k / n
+        out.append((2 * (cb + r * math.sin(ang)), ca + r * math.cos(ang)))
+    out[0], out[-1] = p0, p1
+    return out
+
+
+def _cross(prof, axis, level, default):
+    """Первая точка профиля, где координата axis (0 — X, 1 — Z) пересекает level; вернуть другую координату."""
+    other = 1 - axis
+    for (a, b) in zip(prof, prof[1:]):
+        va, vb = a[axis], b[axis]
+        if (va - level) * (vb - level) <= 0 and va != vb:
+            t = (level - va) / (vb - va)
+            return a[other] + t * (b[other] - a[other])
+    return prof[-1][other] if prof else default
 
 
 def reconcile(sims):
@@ -1343,9 +1627,22 @@ def validate_program(text, subprograms=None, is_subprogram=False, max_rpm=None):
         q = _tok(s, 'Q')
         if q and _safe(q['valueExpr']) <= 0:
             add('error', s, 'PECK-Q', 'Q%s: шаг клевка должен быть положительным (0 или отрицательное значение даёт бесконечное число проходов)' % q['valueExpr'])
+    referenced = set()
+    for st in stmts:
+        for t in st['tokens']:
+            if t['type'] == 'goto':
+                referenced.add(js_key(t['target']))
+        if any(v in (70, 71, 72, 73) for v in _gvals(st)) or any(t['type'] == 'word' and t['letter'] == 'M' and js_round(_safe(t['valueExpr'])) == 99 for t in st['tokens']):
+            for letter in ('P', 'Q'):
+                tk = _tok(st, letter)
+                if tk:
+                    referenced.add(js_key(tk['valueExpr']))
     for key, idxs in sorted(dups.items(), key=lambda kv: int(kv[0]) if kv[0].isdigit() else 10 ** 12):
-        add('warning', stmts[idxs[0]], 'DUP-N', 'Номер кадра N%s встречается %d раз (строки %s) - GOTO/переход найдёт ПЕРВОЕ вхождение, как на станке; убедитесь, что это то, что задумано' % (
-            key, len(idxs), ', '.join(str(stmts[i]['lineNo']) for i in idxs)))
+        lines = ', '.join(str(stmts[i]['lineNo']) for i in idxs)
+        if key in referenced:
+            add('warning', stmts[idxs[0]], 'DUP-N', 'Номер кадра N%s встречается %d раз (строки %s), и на него есть переход (GOTO / P-Q цикла / M99 P) - проверьте, какой кадр возьмёт станок' % (key, len(idxs), lines))
+        else:
+            add('warning', stmts[idxs[0]], 'DUP-N', 'Номер кадра N%s встречается %d раз (строки %s); переходов на него нет - для станка безопасно, но при поиске кадра (повторный пуск с N) оператор попадёт на первое вхождение' % (key, len(idxs), lines), False)
     stack, max_depth = [], 0
     for s in stmts:
         for t in s['tokens']:
@@ -1444,23 +1741,39 @@ def validate_program(text, subprograms=None, is_subprogram=False, max_rpm=None):
         th = next((v for v in _gvals(s) if v in (32, 34)), None)
         if th is not None and not _has(s, 'F'):
             add('warning', s, 'THREAD-F', 'G%s: нарезание резьбы без адреса F (шаг резьбы) в этом кадре' % js_num(th), False)
-    for s in stmts:
+    label_all = {}
+    for i, st in enumerate(stmts):
+        if st['nLabel'] is not None:
+            label_all.setdefault(js_key(st['nLabel']), []).append(i)
+    for ci, s in enumerate(stmts):
         g = next((v for v in _gvals(s) if v in (70, 71, 72, 73)), None)
         if g is None:
             continue
         p, q = _tok(s, 'P'), _tok(s, 'Q')
         if not p or not q:
             continue
-        pi, qi = labels.get(js_key(p['valueExpr'])), labels.get(js_key(q['valueExpr']))
+        pq = Simulator.pq_labels(dict(label_all=label_all), ci, p['valueExpr'], q['valueExpr'])
+        pi, qi = pq.get(js_key(p['valueExpr'])), pq.get(js_key(q['valueExpr']))
         if pi is None:
-            add('error', s, 'CYCLE-PQ', 'G%s P%s: начало профиля N%s не найдено в программе' % (js_num(g), p['valueExpr'], p['valueExpr']))
+            add('error', s, 'CYCLE-PQ', 'G%s P%s: начало профиля N%s не найдено в программе - авария станка' % (js_num(g), p['valueExpr'], p['valueExpr']))
             continue
         if qi is None:
-            add('error', s, 'CYCLE-PQ', 'G%s Q%s: конец профиля N%s не найден в программе' % (js_num(g), q['valueExpr'], q['valueExpr']))
+            add('error', s, 'CYCLE-PQ', 'G%s Q%s: конец профиля N%s не найден в программе - авария станка' % (js_num(g), q['valueExpr'], q['valueExpr']))
             continue
         if qi <= pi:
-            add('error', s, 'CYCLE-PQ-ORDER', 'G%s P%s Q%s: конец профиля (Q) стоит раньше начала (P) или совпадает с ним - контур цикла пуст, время посчитано неверно' % (js_num(g), p['valueExpr'], q['valueExpr']))
+            add('error', s, 'CYCLE-PQ-ORDER', 'G%s P%s Q%s: конец профиля (Q) стоит раньше начала (P) или совпадает с ним - контур цикла пуст' % (js_num(g), p['valueExpr'], q['valueExpr']))
             continue
+        dup = [k for k in (p['valueExpr'], q['valueExpr']) if len(label_all.get(js_key(k), [])) > 1]
+        if dup:
+            first = {k: stmts[label_all[js_key(k)][0]]['lineNo'] for k in dup}
+            used = {k: stmts[(pi if k == p['valueExpr'] else qi)]['lineNo'] for k in dup}
+            risky = [k for k in dup if first[k] != used[k]]
+            add('warning' if not risky else 'error', s, 'CYCLE-PQ-DUP',
+                'G%s P%s Q%s: номер %s повторяется в программе. Взят ближайший после цикла (%s). %s Дайте профилю уникальные номера N.' % (
+                    js_num(g), p['valueExpr'], q['valueExpr'], ', '.join('N' + k for k in dup),
+                    ', '.join('N%s - стр. %d' % (k, used[k]) for k in dup),
+                    ('Если стойка ищет номер с начала программы, она возьмёт %s - контур будет чужим, станок выдаст аварию или обработает не то.' %
+                     ', '.join('N%s стр. %d' % (k, first[k]) for k in risky)) if risky else ''), certain=not risky or None)
         for idx in range(pi, qi + 1):
             inner = stmts[idx]
             if inner is s:
@@ -1489,6 +1802,55 @@ def validate_program(text, subprograms=None, is_subprogram=False, max_rpm=None):
         st = _tok(s, letter)
         if st and _safe(st['valueExpr']) <= 0:
             add('warning', s, 'CYCLE-STEP', 'G%s %s%s: шаг должен быть положительным (0 или отрицательное значение бессмысленно для цикла с ломкой стружки)' % (js_num(g), letter, st['valueExpr']), False)
+    # режимы шпинделя и резьба: G96 без G50, резьба при G96, параметры G76, шаг
+    css, clamped, pend76 = False, False, None
+    for s in stmts:
+        gv = _gvals(s)
+        has_s = _has(s, 'S', ('word', 'indexed'))
+        if 50 in gv and has_s:
+            clamped = True
+        if 96 in gv:
+            if not clamped:
+                add('warning', s, 'G96-G50', 'G96 (постоянная скорость резания) без предварительного ограничения оборотов G50 S… - '
+                    'при подходе к оси (X→0) обороты вырастут до максимума станка')
+            css = True
+        if 97 in gv:
+            css = False
+        thread = next((v for v in gv if v in (32, 33, 76, 92)), None)
+        if thread is None:
+            continue
+        if thread == 76 and not (_has(s, 'X') or _has(s, 'Z') or _has(s, 'U') or _has(s, 'W')):
+            p = _tok(s, 'P')
+            if p:
+                raw = str(p['valueExpr']).split('.')[0].lstrip('+')
+                if not re.fullmatch(r'\d{5,6}', raw):
+                    add('error', s, 'G76-P', 'G76 P%s: в первом кадре P - шесть цифр «mm rr aa» (чистовые проходы, фаска, угол), '
+                        'например P020060' % p['valueExpr'])
+                else:
+                    angle = int(raw[-2:])
+                    if angle not in (0, 29, 30, 55, 60, 80):
+                        add('error', s, 'G76-P', 'G76 P%s: угол профиля %d° - допустимы 0, 29, 30, 55, 60, 80' % (p['valueExpr'], angle))
+            pend76 = s
+            continue
+        if css:
+            add('warning', s, 'THREAD-G96', 'G%s: нарезание резьбы в режиме G96 - обороты меняются с диаметром прохода, '
+                'для резьбы задайте G97 S… (постоянные обороты)' % js_num(thread))
+        f = _tok(s, 'F')
+        if f:
+            lead = _safe(f['valueExpr'])
+            if lead > 0 and not any(abs(lead - p) <= max(0.004, p * 0.004) for p in STD_PITCHES):
+                add('warning', s, 'THREAD-F', 'Шаг резьбы F%s мм не совпадает со стандартным метрическим или дюймовым - '
+                    'проверьте' % f['valueExpr'], False)
+        if thread == 76:
+            p, q = _tok(s, 'P'), _tok(s, 'Q')
+            if p and q and _safe(q['valueExpr']) > _safe(p['valueExpr']) > 0:
+                add('error', s, 'G76-Q', 'G76: глубина первого прохода Q%s больше высоты резьбы P%s' % (q['valueExpr'], p['valueExpr']))
+            if not p or _safe(p['valueExpr']) <= 0:
+                add('error', s, 'G76-P', 'G76: во втором кадре не задана высота резьбы P')
+            if pend76 is None:
+                add('warning', s, 'G76-1', 'G76 X… Z…: нет первого кадра «G76 P… Q… R…» - число проходов и фаска берутся из '
+                    'параметров станка', False)
+            pend76 = None
     return stmts, labels, findings
 
 

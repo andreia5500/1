@@ -467,6 +467,7 @@ class SetupWindow(tk.Toplevel):
         self.tools_tab()
         self.check_tab()
         self.blocks_tab()
+        self.plot_tab()
         self.current = None
         self.show_file(setup['file'])
         if any(i['severity'] == 'error' for i in setup['issues']):
@@ -605,6 +606,20 @@ class SetupWindow(tk.Toplevel):
         if len(s['blocks']) > 20000:
             table.insert('', 'end', values=('', '', '… показаны первые 20 000 кадров', '', '', ''))
         table.bind('<Double-1>', lambda e: self.jump(table, rows, e))
+
+    def plot_tab(self):
+        import backplot as BP
+        s = self.setup
+        segments = s.get('segments')
+        if segments is None:
+            segments = [dict(kind=p['kind'], pts=p['pts'], line=p['line'], file=p['file'], tool=p['tool']) for p in s.get('path') or []]
+        page = ttk.Frame(self.book, padding=10)
+        self.book.add(page, text='Траектория')
+        if not segments:
+            ttk.Label(page, text='Траектории нет (программа без перемещений или они не смоделированы).', style='Muted.TLabel').pack(anchor='w')
+            return
+        BP.Backplot(page, segments, mode=s.get('plot_mode', 'mill'), stock=s.get('stock'), bar=s.get('bar'),
+                    markers=s.get('markers'), on_pick=lambda f, line: self.show_file(f or s['file'], line)).pack(fill='both', expand=True)
 
     def jump(self, table, rows, event):
         iid = table.identify_row(event.y)

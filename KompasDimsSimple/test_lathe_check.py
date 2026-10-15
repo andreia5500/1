@@ -1,0 +1,87 @@
+"""Автомат: траектория, модель заготовки и проверки врезаний/резьбы/припуска; исправления движка 2.3.0."""
+import unittest
+from pathlib import Path
+
+import auto_dialog as A
+import lathe_check as L
+import nc_engine as E
+
+PROG = Path(__file__).parent / 'nc_tests' / 'programs'
+HEAD = 'O1000(TEST)\n(ZAGOTOVKA - KRUG D20)\nG0G40G80G99G18T0\nT0202(CNMG)\nG50S1=3000\nG96S1=150M03\nG0X24.Z-1.\nG1Z0.F0.1\nX-1.\nG0Z-1.\n'
+
+
+def sim_of(text, subs=None):
+    sims, rep = E.calculate([dict(name='S1', spindle='1', text=text)], subs or {}, E.default_params())
+    return sims[0], rep
+
+
+def codes(text, names=None):
+    sim, _ = sim_of(text)
+    return [i['code'] for i in L.analyze(sim, text, names or {'0202': 'CNMG', '0303': 'REZBA'})['issues']]
+
+
+class Engine(unittest.TestCase):
+    def test_profile_label_searched_forward(self):
+        text = HEAD + ('X22.\nG71U1.R0.2\nG71P10Q20U0.F0.2\nN10G1X16.\nZ10.\nN20X22.\nG0X40.\n'
+                       'G0X22.Z9.\nG71U1.R0.2\nG71P10Q20U0.F0.2\nN10G1X14.Z9.\nZ20.\nN20X22.\nM30')
+        sim, _ = sim_of(text)
+        profiles = [c for c in sim.cycles if c['kind'] == 'G71']
+        self.assertEqual(len(profiles), 2)
+        self.assertAlmostEqual(profiles[1]['profile'][-2][1], 20.0)   # второй цикл взял свой N10–N20
+        _, _, found = E.validate_program(text)
+        self.assertIn('CYCLE-PQ-DUP', [f['code'] for f in found])
+        self.assertNotIn('CYCLE-PQ-ORDER', [f['code'] for f in found])
+
+    def test_sync_codes_are_not_moves(self):
+        sim, _ = sim_of('G0X10.Z5.\nG98G1Z50.F100.\nG125Z2\nM30')
+        self.assertEqual(sim.pos['Z'], 50.0)
+
+    def test_g75_grooving_time_and_path(self):
+        sim, _ = sim_of('G97S1=1000M3\nG0X20.Z10.\nG75R0.5\nG75X10.Z14.P2.Q2.F0.1\nM30')
+        grooves = [s for s in sim.path if s['kind'] == 'groove']
+        self.assertEqual(len(grooves), 3)                    # Z10, Z12, Z14
+        self.assertGreater(sim.cutting_ms, 3 * 5 / 100 * 60000 * 0.99)
+
+    def test_thread_checks_in_validator(self):
+        found = [f['code'] for f in E.validate_program('G96S1=100M3\nG76P020061Q0.1R0.1\nG76X10.Z20.P0.8Q1.F1.3\n')[2]]
+        for code in ('G96-G50', 'G76-P', 'G76-Q', 'THREAD-G96', 'THREAD-F'):
+            self.assertIn(code, found)
+
+
+class Stock(unittest.TestCase):
+    def test_rapid_into_material(self):
+        self.assertIn('G0 в материал', codes(HEAD + 'G0X16.Z5.\nM30'))
+        self.assertIn('G0 в материал', codes(HEAD + 'G0X22.Z5.\nM30'))       # по диагонали через торец
+        self.assertNotIn('G0 в материал', codes(HEAD + 'G0X22.\nZ5.\nM30'))   # сначала вверх, потом вдоль
+
+    def test_thread_end_beyond_relief_groove(self):
+        text = HEAD + ('G0X22.Z0.\nG1X16.F0.1\nZ10.\nX12.\nZ12.\nX16.\nZ20.\nX22.\nG0X30.\n'
+                       'G97S1=800M3\nG0X18.Z-3.\nG76P010060Q0.1R0.1\nG76X14.Z13.P1.Q0.3F1.5\nM30')
+        found = codes(text)
+        self.assertIn('G76 конец', found)
+        ok = text.replace('G76X14.Z13.', 'G76X14.Z11.')
+        self.assertNotIn('G76 конец', codes(ok))
+
+    def test_thread_start_clearance_and_oversize(self):
+        text = HEAD + ('G0X22.Z-1.\nG71U1.R0.2\nG71P10Q20U0.4F0.2\nN10G1X16.\nZ10.\nN20X22.\nG0X30.\n'
+                       'G97S1=800M3\nG0X16.Z-3.\nG76P010060Q0.1R0.1\nG76X14.Z8.P1.Q0.3F1.5\nM30')
+        found = codes(text)
+        self.assertIn('G76 отвод', found)
+        self.assertIn('G76 Ø', found)
+        self.assertIn('Припуск', found)
+
+    def test_reference_programs_have_no_geometry_errors(self):
+        for name in ('O6017', 'O6108'):
+            text = (PROG / name).read_text()
+            sim, _ = sim_of(text, {n: (PROG / ('O' + n)).read_text() for n in ('5000', '5001', '5002')})
+            names = {x['T']: x['name'] for x in A.tool_list(text)}
+            errors = [i for i in L.analyze(sim, text, names)['issues'] if i['severity'] == 'error']
+            self.assertEqual(errors, [], name)
+
+    def test_bar_diameter(self):
+        self.assertEqual(L.bar_diameter('(ZAGOTOVKA - KRUG D28 40X)'), 28.0)
+        self.assertEqual(L.bar_diameter('#20=26.(DIAMETR ZAGOTOVKI)'), 26.0)
+
+
+if __name__ == '__main__':
+    unittest.main()

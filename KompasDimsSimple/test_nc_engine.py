@@ -27,7 +27,9 @@ def run(text, subs=None, params=None):
 
 
 class ReferenceJs(unittest.TestCase):
-    """Значения посчитаны исправленной JS-версией 1.7.0 на тех же файлах."""
+    """Значения JS-версии 1.7.0 (217889.52 / 332863.19 мс) минус ошибка JS: кадр «G125Z2»
+    (отмена совмещения осей, Z2 — номер оси) считался перемещением по Z до Z=2 на подаче.
+    С 2.3.0 такие кадры — не перемещение; остальное совпадает с JS по каждому кадру."""
     def check(self, a, b, total, cuts):
         sims, rep = E.calculate([dict(name=a, spindle='1', text=prog(a)), dict(name=b, spindle='2', text=prog(b))], SUBS)
         self.assertAlmostEqual(rep['totalMs'], total, places=6)
@@ -35,10 +37,10 @@ class ReferenceJs(unittest.TestCase):
             self.assertAlmostEqual(sim.cutting_ms, cut, places=6)
 
     def test_o6017_o6018(self):
-        self.check('O6017', 'O6018', 217889.5162561827, (143029.80715217156, 24105.8069431629))
+        self.check('O6017', 'O6018', 205092.37339903985, (130182.66429502872, 24105.8069431629))
 
     def test_o6108_o6109(self):
-        self.check('O6108', 'O6109', 332863.1915513018, (214471.07777245168, 3952.789915966386))
+        self.check('O6108', 'O6109', 309283.1915513018, (190841.07777245168, 3952.789915966386))
 
 
 class HandCalc(unittest.TestCase):

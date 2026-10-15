@@ -15,7 +15,9 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import ttk, filedialog, messagebox
 
+import backplot as BP
 import debug_log as J
+import lathe_check as LC
 import nc_engine as E
 import nc_dialog as D
 import mill_dialog as MD
@@ -321,6 +323,23 @@ class AutoTab(ttk.Frame):
                                        file=shown, line=f.get('line')))
             for w in sim.warnings:
                 issues.append(dict(severity='warning', certain=True, code='Расчёт', message=w, file=prog['name'], line=None))
+            file_of = lambda pr, name=prog['name']: name if pr == 'MAIN' else pr
+            tools = tool_list(prog['text'])
+            names = {t['T']: t['name'] for t in tools}
+            for no in called_subs_deep(prog['text'], self.subs):
+                names.update({t['T']: t['name'] for t in tool_list(self.subs[no]['text']) if t['T'] not in names})
+            geo = dict(issues=[], stock=None, bar=None)
+            if side == 'S1':
+                try:
+                    geo = LC.analyze(sim, prog['text'], names)
+                except Exception as exc:      # проверка геометрии не должна ломать расчёт времени
+                    J.failure('Проверка врезаний автомата', exc)
+            markers = []
+            for g in geo['issues']:
+                issues.append(dict(severity=g['severity'], certain=g['certain'], code=g['code'], message=g['message'],
+                                   file=file_of(g.get('prog') or 'MAIN'), line=g.get('line')))
+                if g.get('at'):
+                    markers.append(dict(pt=(g['at'][0] / 2, 0.0, g['at'][1]), text=g['message'], line=g.get('line')))
             issues += [dict(c) for c in cross]
             issues.sort(key=lambda i: (i['severity'] != 'error', not i['certain'], i['line'] or 0))
             own = sum(e['segMs'] for e in sim.events) + sim.tail_ms
@@ -341,7 +360,9 @@ class AutoTab(ttk.Frame):
             cards.append(dict(side=side, role=dict((s, r) for s, _, r in SIDES)[side], no=prog['no'] or '?', title=prog['title'],
                               file=prog['name'], ms=finish, own=own, wait=wait, issues=issues, blocks=blocks,
                               cat=dict(cut=cut, move=max(0.0, own - cut), wait=wait), incomplete=sim.incomplete,
-                              tools=tool_list(prog['text']), alt_ms=None, block_skip=True, stops=[], span={}))
+                              tools=tools, alt_ms=None, block_skip=True, stops=[], span={},
+                              segments=BP.lathe_segments(sim.path, file_of), stock=geo.get('stock'), bar=geo.get('bar'),
+                              markers=markers, plot_mode='lathe'))
             errors += sum(1 for i in issues if i['severity'] == 'error' and i not in cross)
             warnings += sum(1 for i in issues if i['severity'] != 'error' and i not in cross)
         errors += sum(1 for i in cross if i['severity'] == 'error')
@@ -614,6 +635,8 @@ def tool_list(text):
             if int(t) == 0:
                 continue
             note = re.search(r'\(([^)]*)\)', raw)
+            if not note and k + 1 < len(lines) and re.fullmatch(r'\s*\([^)]*\)\s*', lines[k + 1]):
+                note = re.search(r'\(([^)]*)\)', lines[k + 1])
             if t not in seen:
                 seen[t] = dict(T=t, name=note.group(1).strip() if note else '', line=k + 1, uses=0, S=set())
                 tools.append(seen[t])
