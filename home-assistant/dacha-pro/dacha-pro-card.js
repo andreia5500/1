@@ -1,4 +1,4 @@
-/* Дача PRO — дашборд одной карточкой (custom:dacha-pro-card). v2.0.0 */
+/* Дача PRO — дашборд одной карточкой (custom:dacha-pro-card). v2.1.0 */
 const E = {
   alarm: "alarm_control_panel.alarmo",
   power: "sensor.summa_moshchnostei",
@@ -96,7 +96,9 @@ const WEATHER_ICON = {
 };
 
 // Базовый размер, под который свёрстана сетка; на экране она масштабируется целиком
-const BASE_W = 1180, BASE_H = 760, MOBILE_W = 760;
+const BASE_W = 1180, BASE_H = 760, MOBILE_W = 600;
+// Вертикальный планшет: своя сетка в 6 колонок
+const BASE_PW = 780, BASE_PH = 1380;
 
 const BAD = ["unknown", "unavailable", "", undefined, null];
 const nf = (v, d = 1) => Number(v).toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -166,11 +168,14 @@ class DachaProCard extends HTMLElement {
     if (w < MOBILE_W || this._config.fit === false) {
       fit = { mobile: w < MOBILE_W, style: "" };
     } else {
-      const s = Math.max(0.55, Math.min(w / BASE_W, h / BASE_H, this._config.max_scale || 1.4));
+      const portrait = h / w > 1.15;
+      const bw = portrait ? BASE_PW : BASE_W, bh = portrait ? BASE_PH : BASE_H;
+      const s = Math.max(0.5, Math.min(w / bw, h / bh, this._config.max_scale || 1.4));
       const useZoom = CSS.supports("zoom", "1");
       const size = `width:${(w / s).toFixed(1)}px;height:${(h / s).toFixed(1)}px;`;
       fit = {
         mobile: false,
+        portrait,
         style: useZoom ? `${size}zoom:${s.toFixed(4)};` : `${size}transform:scale(${s.toFixed(4)});transform-origin:0 0;`,
         hostH: h,
       };
@@ -580,7 +585,7 @@ class DachaProCard extends HTMLElement {
     ];
 
     return `
-<div class="root theme-${theme} ${this._fit.mobile ? "mobile" : "fit"}" style="${this._fit.style}">
+<div class="root theme-${theme} ${this._fit.mobile ? "mobile" : "fit"} ${this._fit.portrait ? "portrait" : ""}" style="${this._fit.style}">
   <aside class="rail">
     <div class="logo" title="${esc(this._config.title || "Дача")}">${esc((this._config.title || "Дача").slice(0, 1))}</div>
     <nav>${NAV.map(([k, t, i]) => `<button class="nav ${this._nav === k ? "active" : ""}" data-act="nav" data-id="${k}">${ic(i)}<span>${t}</span></button>`).join("")}</nav>
@@ -848,7 +853,7 @@ nav { display:flex; flex-direction:column; gap:3px; width:100%; }
 /* сетка: 12 колонок, 4 ряда, на планшете всё помещается в экран */
 .grid { flex:1; min-height:0; display:grid; gap:10px;
   grid-template-columns:repeat(12, minmax(0,1fr));
-  grid-template-rows:minmax(0,0.67fr) minmax(0,0.95fr) minmax(0,1fr) minmax(0,0.8fr);
+  grid-template-rows:minmax(0,0.66fr) minmax(0,0.9fr) minmax(0,1.08fr) minmax(0,0.84fr);
   grid-template-areas:
     "sec sec sec pow pow pow tmp tmp tmp sns sns sns"
     "clm clm clm clm clm clm lgt lgt lgt lgt lgt lgt"
@@ -953,6 +958,24 @@ nav { display:flex; flex-direction:column; gap:3px; width:100%; }
 .cam span { color:var(--muted); font-size:11.5px; margin-top:4px; }
 .shot { flex:1; min-height:0; border:1px solid var(--line); border-radius:8px; background:var(--card2); overflow:hidden; }
 .shot img { width:100%; height:100%; object-fit:cover; display:block; }
+
+/* вертикальный планшет */
+.portrait .grid {
+  grid-template-columns:repeat(6, minmax(0,1fr));
+  grid-template-rows:minmax(0,125fr) minmax(0,128fr) minmax(0,200fr) minmax(0,158fr) minmax(0,200fr) minmax(0,162fr) minmax(0,140fr) minmax(0,112fr);
+  grid-template-areas:
+    "sec sec sec pow pow pow"
+    "tmp tmp tmp sns sns sns"
+    "clm clm clm clm clm clm"
+    "lgt lgt lgt lgt lgt lgt"
+    "heat heat heat sid sid sid"
+    "lod lod lod lod lod lod"
+    "cam cam cam cam cam cam"
+    "sys sys sys sys sys sys"; }
+.portrait .a-load .chips.n3 { grid-template-columns:repeat(6, minmax(0,1fr)); }
+.portrait .sys { display:grid; grid-template-columns:1fr 1fr; column-gap:28px; align-content:space-between; }
+.portrait .sys .row:nth-last-child(2) { border-bottom:0; }
+.portrait .top { row-gap:8px; }
 
 /* телефон: обычная прокрутка в одну колонку */
 .root.mobile { grid-template-columns:minmax(0,1fr); grid-template-rows:auto 1fr; }

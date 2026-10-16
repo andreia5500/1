@@ -6,9 +6,60 @@
       "icon": "mdi:view-dashboard-outline",
       "type": "panel",
       "cards": [
-        { "type": "custom:dacha-pro-card", "title": "Дача", "cameras_path": "/dacha-pro/kamery" }
+        {
+          "type": "custom:dacha-pro-card",
+          "title": "Дача",
+          "cameras_path": "/dacha-pro/kamery"
+        }
+      ]
+    },
+    {
+      "title": "Камеры",
+      "path": "kamery",
+      "icon": "mdi:cctv",
+      "type": "panel",
+      "cards": [
+        {
+          "type": "custom:advanced-camera-card",
+          "cameras": [
+            {
+              "camera_entity": "camera.auto_door",
+              "live_provider": "jsmpeg",
+              "title": "Ворота"
+            },
+            {
+              "camera_entity": "camera.front_door",
+              "live_provider": "jsmpeg",
+              "title": "Вход"
+            },
+            {
+              "camera_entity": "camera.banya",
+              "title": "Баня"
+            },
+            {
+              "camera_entity": "camera.terrasa",
+              "title": "Терраса"
+            },
+            {
+              "camera_entity": "camera.bassein",
+              "title": "Бассейн"
+            },
+            {
+              "camera_entity": "camera.dom3",
+              "title": "Дом"
+            }
+          ],
+          "view": {
+            "default": "live"
+          },
+          "live": {
+            "display": {
+              "mode": "grid",
+              "grid_max_columns": 3
+            }
+          }
+        }
       ]
     }
-  ],
-  "_note": "Вид «Камеры» (path: kamery, custom:advanced-camera-card) оставлен без изменений."
+  ]
 }
