@@ -1,4 +1,4 @@
-/* Дача PRO — дашборд одной карточкой (custom:dacha-pro-card). v2.4.0 */
+/* Дача PRO — дашборд для настенного планшета (custom:dacha-pro-card). v3.0.0 */
 const E = {
   alarm: "alarm_control_panel.alarmo",
   power: "sensor.summa_moshchnostei",
@@ -49,33 +49,32 @@ const E = {
 };
 
 const CLIMATE = [
-  { name: "Комната", climate: "climate.temperatura_komnata", temp: "sensor.0xa4c138c3897b0e8d_temperature", heater: "switch.0xa4c138d117a0a7ae", power: "sensor.0xa4c138d117a0a7ae_power", color: "var(--blue)" },
-  { name: "Кухня", climate: "climate.temperatura_kukhnia", temp: "sensor.0xa4c1387166d89ee9_temperature", heater: "switch.0xa4c138477e1d1b01", power: "sensor.0xa4c138477e1d1b01_power", color: "var(--orange)" },
-  { name: "Тамбур", climate: "climate.temperatura_tambur", temp: "sensor.0xa4c13856cdfde690_temperature", heater: "switch.obogrev_tambur_z2", power: "sensor.obogrev_tambur_z2_power", color: "var(--grey)" },
+  { name: "Комната", climate: "climate.temperatura_komnata", temp: "sensor.0xa4c138c3897b0e8d_temperature", heater: "switch.0xa4c138d117a0a7ae", power: "sensor.0xa4c138d117a0a7ae_power", color: "var(--c1)" },
+  { name: "Кухня", climate: "climate.temperatura_kukhnia", temp: "sensor.0xa4c1387166d89ee9_temperature", heater: "switch.0xa4c138477e1d1b01", power: "sensor.0xa4c138477e1d1b01_power", color: "var(--c2)" },
+  { name: "Тамбур", climate: "climate.temperatura_tambur", temp: "sensor.0xa4c13856cdfde690_temperature", heater: "switch.obogrev_tambur_z2", power: "sensor.obogrev_tambur_z2_power", color: "var(--c3)" },
 ];
-// Ступени обогрева жилой зоны
-const STAGES = ["switch.0xa4c138d117a0a7ae", "switch.0xa4c138477e1d1b01", "switch.0xa4c1388cfa5f06ae"];
 const HEATERS = [
   ["Комната", "switch.0xa4c138d117a0a7ae"],
   ["Кухня", "switch.0xa4c138477e1d1b01"],
   ["Лестница", "switch.0xa4c1388cfa5f06ae"],
   ["Тамбур", "switch.obogrev_tambur_z2"],
 ];
-const PRESETS = [["away", "Дежурный", "mdi:home-export-outline"], ["home", "Дома", "mdi:home-outline"], ["comfort", "Комфорт", "mdi:sofa-outline"]];
+const PRESETS = [["away", "Дежурный", "mdi:shield-home-outline"], ["home", "Дома", "mdi:home-outline"], ["comfort", "Комфорт", "mdi:sofa-outline"]];
 
 const LIGHTS = [
   { group: "Улица", items: [["Улица", "switch.svet_ulitsa_z2", "mdi:coach-lamp"], ["Баня", "switch.svet_bania_z2", "mdi:outdoor-lamp"], ["Терраса", "switch.svet_terrasa_z2", "mdi:ceiling-light"]] },
-  { group: "1 этаж", items: [["Туал.", "switch.0xa4c1382800b07340", "mdi:toilet"], ["Комн. 1", "switch.0xa4c1387e50957968_left", "mdi:ceiling-light-outline"], ["Комн. 2", "switch.0xa4c1387e50957968_right", "mdi:ceiling-light-outline"], ["Спальня", "switch.0xa4c138459a6af661", "mdi:bed-outline"]] },
+  { group: "1 этаж", items: [["Туалет", "switch.0xa4c1382800b07340", "mdi:toilet"], ["Комната 1", "switch.0xa4c1387e50957968_left", "mdi:ceiling-light-outline"], ["Комната 2", "switch.0xa4c1387e50957968_right", "mdi:ceiling-light-outline"], ["Спальня", "switch.0xa4c138459a6af661", "mdi:bed-outline"]] },
   { group: "2 этаж", items: [["Л1", "switch.0xa4c138a71f7d780b_l1", "mdi:lightbulb-outline"], ["Л2", "switch.0xa4c138a71f7d780b_l2", "mdi:lightbulb-outline"], ["Л3", "switch.0xa4c138a71f7d780b_l3", "mdi:lightbulb-outline"], ["Л4", "switch.0xa4c138a71f7d780b_l4", "mdi:lightbulb-outline"]] },
 ];
+const LIGHT_IDS = LIGHTS.flatMap((g) => g.items.map((i) => i[1]));
 
 const LOADS = [
-  ["Вода", "switch.0xa4c13841d4a7bb3a", "mdi:water-pump"],
-  ["Вытяжка", "switch.0xa4c138150cd653bd", "mdi:fan"],
-  ["Бойлер", "switch.obogrev_lestnitsa", "mdi:water-boiler"],
-  ["Пол туал.", "switch.0xa4c13859b38594c2", "mdi:heating-coil"],
-  ["Штора", "cover.0x7cc6b6fffec1a5dd", "mdi:curtains"],
-  ["Пылесос", "vacuum.robot_pylesos_dacha_robot_pylesos_dacha", "mdi:robot-vacuum"],
+  ["Вода", "switch.0xa4c13841d4a7bb3a", "mdi:water-pump", ""],
+  ["Вытяжка", "switch.0xa4c138150cd653bd", "mdi:fan", ""],
+  ["Бойлер", "switch.obogrev_lestnitsa", "mdi:water-boiler", "heat"],
+  ["Тёплый пол", "switch.0xa4c13859b38594c2", "mdi:heating-coil", "heat"],
+  ["Штора", "cover.0x7cc6b6fffec1a5dd", "mdi:curtains", ""],
+  ["Пылесос", "vacuum.robot_pylesos_dacha_robot_pylesos_dacha", "mdi:robot-vacuum", ""],
 ];
 
 const WATERING = [["Газон", "switch.0xa4c138850a555bb4_l1", "mdi:grass"], ["Клубника", "switch.0xa4c138850a555bb4_l2", "mdi:fruit-cherries"], ["Бочка", "switch.0xa4c138850a555bb4_l3", "mdi:barrel"]];
@@ -96,10 +95,11 @@ const WEATHER_ICON = {
   snowy: "mdi:weather-snowy", "snowy-rainy": "mdi:weather-snowy", fog: "mdi:weather-fog",
 };
 
-// Базовый размер, под который свёрстана сетка; на экране она масштабируется целиком
-const BASE_W = 1120, BASE_H = 760, MOBILE_W = 600;
-// Вертикальный планшет: своя сетка в 6 колонок
-const BASE_PW = 720, BASE_PH = 1380;
+// Сетка рассчитана на эти размеры и целиком масштабируется под экран (без прокрутки)
+const BASE_PW = 800, BASE_PH = 1230; // планшет вертикально
+const BASE_W = 1280, BASE_H = 760;   // планшет горизонтально / монитор
+const MOBILE_W = 600;
+const IDLE_HOME_MS = 120000;         // без касаний 2 минуты — вернуться на «Дом»
 
 const BAD = ["unknown", "unavailable", "", undefined, null];
 const nf = (v, d = 1) => Number(v).toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -118,8 +118,10 @@ class DachaProCard extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this._hist = {};
     this._pending = new Map();
+    this._tab = "home";
     this._theme = null;
     this._fit = { mobile: false, style: "" };
+    this._lastTouch = Date.now();
     try { this._theme = localStorage.getItem("dacha-pro-theme"); } catch (e) { /* storage недоступен */ }
   }
 
@@ -132,15 +134,22 @@ class DachaProCard extends HTMLElement {
       const l = document.createElement("link");
       l.id = "dacha-pro-font";
       l.rel = "stylesheet";
-      l.href = "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap";
+      l.href = "https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600&display=swap";
       document.head.appendChild(l);
     }
-    this._clock = setInterval(() => this._render(true), 30000);
+    // часы, снимки камер и возврат на «Дом» после простоя
+    this._clock = setInterval(() => {
+      if (this._tab !== "home" && !this._pad && Date.now() - this._lastTouch > (this._config.idle_home_ms || IDLE_HOME_MS)) this._tab = "home";
+      this._camTick = Math.floor(Date.now() / 15000);
+      this._render(true);
+    }, 15000);
     this._histTimer = setInterval(() => this._loadHistory(), 5 * 60000);
     this._onResize = () => this._measure();
     window.addEventListener("resize", this._onResize);
     this._ro = new ResizeObserver(() => this._measure());
     this._ro.observe(this);
+    this._onTouch = () => { this._lastTouch = Date.now(); };
+    this.addEventListener("pointerdown", this._onTouch, true);
     if (this._hass) this._loadHistory();
     requestAnimationFrame(() => this._measure());
   }
@@ -149,6 +158,7 @@ class DachaProCard extends HTMLElement {
     clearInterval(this._clock);
     clearInterval(this._histTimer);
     window.removeEventListener("resize", this._onResize);
+    this.removeEventListener("pointerdown", this._onTouch, true);
     if (this._ro) this._ro.disconnect();
   }
 
@@ -159,7 +169,7 @@ class DachaProCard extends HTMLElement {
     this._render();
   }
 
-  /* Подгонка под экран: сетка всегда занимает ровно видимую область без прокрутки */
+  /* Подгонка под экран: страница всегда занимает ровно видимую область без прокрутки */
   _measure() {
     const w = this.clientWidth;
     if (!w) return;
@@ -169,9 +179,9 @@ class DachaProCard extends HTMLElement {
     if (w < MOBILE_W || this._config.fit === false) {
       fit = { mobile: w < MOBILE_W, style: "" };
     } else {
-      const portrait = h / w > 1.15;
+      const portrait = h / w > 1.1;
       const bw = portrait ? BASE_PW : BASE_W, bh = portrait ? BASE_PH : BASE_H;
-      const s = Math.max(0.5, Math.min(w / bw, h / bh, this._config.max_scale || 1.4));
+      const s = Math.max(0.5, Math.min(w / bw, h / bh, this._config.max_scale || 1.6));
       const useZoom = CSS.supports("zoom", "1");
       const size = `width:${(w / s).toFixed(1)}px;height:${(h / s).toFixed(1)}px;`;
       fit = {
@@ -201,6 +211,7 @@ class DachaProCard extends HTMLElement {
     return Number.isFinite(x) ? x : null;
   }
   a(id, attr) { const o = this.st(id); return o ? o.attributes[attr] : undefined; }
+  tmp(x) { return x === null || x === undefined ? "—" : `${sgn(x, 1)}°`; }
 
   weatherEntity() { return E.weather.find((w) => this.st(w) && !BAD.includes(this.s(w))) || E.outTemp; }
 
@@ -235,11 +246,8 @@ class DachaProCard extends HTMLElement {
         significant_changes_only: false,
       });
       const out = {};
-      for (const id of ids) {
-        out[id] = (res[id] || []).map((p) => ({ t: (p.lu ?? p.lc) * 1000, s: p.s }));
-      }
+      for (const id of ids) out[id] = (res[id] || []).map((p) => ({ t: (p.lu ?? p.lc) * 1000, s: p.s }));
       this._hist = out;
-      this._histAt = end;
       this._render(true);
     } catch (e) {
       console.warn("dacha-pro-card: history", e);
@@ -291,116 +299,36 @@ class DachaProCard extends HTMLElement {
     return { wins: wins.map(([a, b]) => [(a - start) / (end - start), (b - start) / (end - start)]), total };
   }
 
-  heatRate() {
-    const s = this.series(CLIMATE[0].temp, 2, 10 * 60e3).filter((v) => v !== null);
-    if (s.length < 3) return null;
-    return (s[s.length - 1] - s[0]) / 2;
-  }
-
-  /* ---------- графики ---------- */
-  path(vals, w, h, min, max, pad = 2) {
-    const pts = vals.map((v, i) => [
-      (i / Math.max(1, vals.length - 1)) * w,
-      v === null ? null : pad + (1 - (v - min) / (max - min || 1)) * (h - pad * 2),
-    ]).filter((p) => p[1] !== null);
-    if (pts.length < 2) return "";
-    let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
-    for (let i = 1; i < pts.length; i++) {
-      const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
-      const cx = (x0 + x1) / 2;
-      d += ` C${cx.toFixed(1)},${y0.toFixed(1)} ${cx.toFixed(1)},${y1.toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)}`;
-    }
-    return d;
-  }
-
-  spark(vals, { fill = true, color = "var(--blue)", cls = "spark" } = {}) {
-    const v = vals.filter((x) => x !== null);
-    if (v.length < 2) return `<div class="${cls}"></div>`;
-    const w = 300, h = 60;
-    let min = Math.min(...v), max = Math.max(...v);
-    if (max - min < 1e-6) { min -= 1; max += 1; }
-    const d = this.path(vals, w, h, min, max);
-    const area = fill ? `<path d="${d} L${w},${h} L0,${h} Z" fill="var(--spark-fill)"/>` : "";
-    return `<svg class="${cls}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${area}<path d="${d}" fill="none" stroke="${color}" stroke-width="1.8" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
-  }
-
-  climateChart() {
-    const series = CLIMATE.map((c) => this.series(c.temp, 24));
-    const all = series.flat().filter((x) => x !== null);
-    const w = 600, h = 130;
-    if (all.length < 2) return `<div class="chart chart-empty">загрузка истории…</div>`;
-    const min = Math.floor(Math.min(...all) - 1), max = Math.ceil(Math.max(...all) + 1);
-    const grid = [0.25, 0.5, 0.75, 1].map((f) => `<line x1="0" x2="${w}" y1="${(h * f).toFixed(1)}" y2="${(h * f).toFixed(1)}" stroke="var(--grid)" stroke-width="1" vector-effect="non-scaling-stroke"/>`).join("");
-    const lines = series.map((s, i) => `<path d="${this.path(s, w, h, min, max, 6)}" fill="none" stroke="${CLIMATE[i].color}" stroke-width="1.8" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`).join("");
-    return `<svg class="chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${grid}${lines}</svg>`;
-  }
-
-  /* ---------- блоки ---------- */
-  chip(name, id, icon, opts = {}) {
-    const st = this.s(id);
-    const active = opts.active ?? (["on", "open", "opening", "cleaning", "heat"].includes(st));
-    const off = BAD.includes(st);
-    const cls = ["chip", active ? "on" : "", off ? "na" : "", opts.tone ? `t-${opts.tone}` : "", this.isPending(id) ? "pending" : ""].join(" ");
-    return `<button class="${cls}" data-act="${opts.act || "toggle"}" data-id="${id}" title="${esc(name)}">${ic(icon)}<span class="lbl">${esc(name)}</span></button>`;
-  }
-
-  /* Нажатая кнопка мигает, пока устройство не ответит сменой состояния (не дольше 10 с) */
-  markPending(id) {
-    if (!id) return;
-    this._pending.set(id, { state: this.s(id), t: Date.now() });
-    clearTimeout(this._pendTimer);
-    this._pendTimer = setTimeout(() => { this._pending.clear(); this._render(true); }, 10000);
-    this._render(true);
-  }
-
-  isPending(id) {
-    const p = this._pending.get(id);
-    if (!p) return false;
-    if (this.s(id) !== p.state || Date.now() - p.t > 10000) { this._pending.delete(id); return false; }
-    return true;
-  }
-
-  head(icon, title, meta = "") {
-    return `<div class="ch"><span class="ct">${ic(icon)}<span class="eyebrow">${title}</span></span>${meta ? `<span class="meta">${meta}</span>` : ""}</div>`;
-  }
-
-  status() {
-    if (this.on(E.leak)) return { text: "Протечка! Вода перекрыта", lvl: "bad" };
-    if (this.on(E.smoke)) return { text: "Дым или CO!", lvl: "bad" };
-    if (this.s(E.alarm) === "triggered") return { text: "Тревога!", lvl: "bad" };
-    if (this.on(E.doors)) return { text: "Открыта дверь", lvl: "warn" };
-    if (this.s(E.upsStatus) && !String(this.s(E.upsStatus)).startsWith("OL")) return { text: "Работа от ИБП", lvl: "warn" };
-    return { text: "Всё спокойно", lvl: "ok" };
-  }
-
   doorCount() {
     const members = this.a(E.doors, "entity_id") || [];
-    const open = members.filter((m) => this.on(m)).length;
-    return { total: members.length, open };
+    return { total: members.length, open: members.filter((m) => this.on(m)).length };
   }
 
   batteries() {
     const skip = /myups|24117|mi_pad|robot_pylesos/;
-    const list = Object.values(this._hass.states).filter((o) =>
+    const vals = Object.values(this._hass.states).filter((o) =>
       o.entity_id.startsWith("sensor.") && o.entity_id.endsWith("_battery") && !skip.test(o.entity_id) &&
-      o.attributes.unit_of_measurement === "%" && !BAD.includes(o.state));
-    const vals = list.map((o) => parseFloat(o.state)).filter(Number.isFinite);
-    if (!vals.length) return { text: "—", cls: "" };
+      o.attributes.unit_of_measurement === "%" && !BAD.includes(o.state)).map((o) => parseFloat(o.state)).filter(Number.isFinite);
+    if (!vals.length) return { text: "—", low: 0 };
     const low = vals.filter((v) => v < 20).length;
     const min = Math.min(...vals);
-    if (low) return { text: `${low} ниже 20 % · мин ${Math.round(min)} %`, cls: "warn" };
-    return { text: `все выше ${Math.floor(min / 10) * 10} %`, cls: "" };
+    return low ? { text: `${low} разряжено · мин ${Math.round(min)} %`, low } : { text: `все выше ${Math.floor(min / 10) * 10} %`, low: 0 };
   }
 
   backup() {
     const v = this.s(E.backupOk);
-    if (BAD.includes(v)) return { text: "нет данных", cls: "warn" };
+    if (BAD.includes(v)) return { text: "нет данных", bad: true };
     const d = new Date(v), now = new Date();
     const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
     const diff = Math.round((day(now) - day(d)) / 86400e3);
     const when = diff === 0 ? "сегодня" : diff === 1 ? "вчера" : d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
     const err = this.s(E.backupState) === "error";
-    return { text: `${err ? "ошибка · " : ""}${when} ${hm(d)}`, cls: err || diff > 2 ? "warn" : "" };
+    return { text: `${err ? "ошибка · " : ""}${when} ${hm(d)}`, bad: err || diff > 2 };
+  }
+
+  motion(camId) {
+    const key = camId.split(".")[1];
+    return this.on(`binary_sensor.${key}_motion`) || this.on(`binary_sensor.${key}_all_occupancy`);
   }
 
   lastPerson() {
@@ -419,6 +347,314 @@ class DachaProCard extends HTMLElement {
   presetNow() {
     const ps = CLIMATE.map((c) => this.a(c.climate, "preset_mode")).filter(Boolean);
     return ps.length && ps.every((p) => p === ps[0]) ? ps[0] : null;
+  }
+
+  status() {
+    if (this.on(E.leak)) return { text: "Протечка — вода перекрыта", lvl: "bad", icon: "mdi:water-alert" };
+    if (this.on(E.smoke)) return { text: "Дым или угарный газ", lvl: "bad", icon: "mdi:smoke-detector-variant-alert" };
+    if (this.s(E.alarm) === "triggered") return { text: "Сработала охрана", lvl: "bad", icon: "mdi:shield-alert-outline" };
+    const dc = this.doorCount();
+    if (dc.open) return { text: dc.open === 1 ? "Открыта дверь" : `Открыто дверей: ${dc.open}`, lvl: "warn", icon: "mdi:door-open" };
+    if (this.s(E.upsStatus) && !String(this.s(E.upsStatus)).startsWith("OL")) return { text: "Нет сети · работает ИБП", lvl: "warn", icon: "mdi:power-plug-off-outline" };
+    return { text: "Всё спокойно", lvl: "ok", icon: "mdi:check-circle-outline" };
+  }
+
+  /* Нажатая кнопка мигает, пока устройство не ответит сменой состояния (не дольше 10 с) */
+  markPending(id) {
+    if (!id) return;
+    this._pending.set(id, { state: this.s(id), t: Date.now() });
+    clearTimeout(this._pendTimer);
+    this._pendTimer = setTimeout(() => { this._pending.clear(); this._render(true); }, 10000);
+    this._render(true);
+  }
+
+  isPending(id) {
+    const p = this._pending.get(id);
+    if (!p) return false;
+    if (this.s(id) !== p.state || Date.now() - p.t > 10000) { this._pending.delete(id); return false; }
+    return true;
+  }
+
+  /* ---------- графика ---------- */
+  path(vals, w, h, min, max, pad = 2) {
+    const pts = vals.map((v, i) => [
+      (i / Math.max(1, vals.length - 1)) * w,
+      v === null ? null : pad + (1 - (v - min) / (max - min || 1)) * (h - pad * 2),
+    ]).filter((p) => p[1] !== null);
+    if (pts.length < 2) return "";
+    let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
+    for (let i = 1; i < pts.length; i++) {
+      const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
+      const cx = (x0 + x1) / 2;
+      d += ` C${cx.toFixed(1)},${y0.toFixed(1)} ${cx.toFixed(1)},${y1.toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)}`;
+    }
+    return d;
+  }
+
+  spark(vals, { fill = true, color = "var(--accent)", cls = "spark" } = {}) {
+    const v = vals.filter((x) => x !== null);
+    if (v.length < 2) return `<div class="${cls} empty">нет данных</div>`;
+    const w = 600, h = 120;
+    let min = Math.min(...v), max = Math.max(...v);
+    if (max - min < 1e-6) { min -= 1; max += 1; }
+    const d = this.path(vals, w, h, min, max, 4);
+    const area = fill ? `<path d="${d} L${w},${h} L0,${h} Z" fill="var(--spark)"/>` : "";
+    return `<svg class="${cls}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${area}<path d="${d}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
+  }
+
+  climateChart() {
+    const series = CLIMATE.map((c) => this.series(c.temp, 24));
+    const all = series.flat().filter((x) => x !== null);
+    const w = 600, h = 160;
+    if (all.length < 2) return `<div class="chart empty">загрузка истории…</div>`;
+    const min = Math.floor(Math.min(...all) - 1), max = Math.ceil(Math.max(...all) + 1);
+    const grid = [0.25, 0.5, 0.75].map((f) => `<line x1="0" x2="${w}" y1="${h * f}" y2="${h * f}" stroke="var(--line)" stroke-width="1" vector-effect="non-scaling-stroke"/>`).join("");
+    const lines = series.map((s, i) => `<path d="${this.path(s, w, h, min, max, 8)}" fill="none" stroke="${CLIMATE[i].color}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`).join("");
+    return `<div class="chart-wrap"><svg class="chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${grid}${lines}</svg>
+      <span class="ax ax-t">${max}°</span><span class="ax ax-b">${min}°</span></div>`;
+  }
+
+  /* ---------- строительные блоки ---------- */
+  // Плитка-переключатель: крупная, с иконкой, названием и состоянием
+  tile(name, id, icon, opts = {}) {
+    const st = this.s(id);
+    const active = opts.active ?? ["on", "open", "opening", "cleaning", "heat"].includes(st);
+    const off = BAD.includes(st);
+    const tone = opts.tone || "acc";
+    const sub = opts.sub ?? (off ? "нет связи" : active ? "включено" : "выключено");
+    const cls = ["tile", active ? `on t-${tone}` : "", off ? "na" : "", this.isPending(id) ? "pending" : "", opts.cls || ""].join(" ");
+    return `<button class="${cls}" data-act="${opts.act || "toggle"}" data-id="${id}">
+      <span class="tile-i">${ic(icon)}</span>
+      <span class="tile-t"><span class="tile-n">${esc(name)}</span><span class="tile-s">${sub}</span></span>
+    </button>`;
+  }
+
+  section(title, meta = "", cls = "") {
+    return `<div class="sec ${cls}"><span>${title}</span>${meta ? `<span class="sec-m">${meta}</span>` : ""}</div>`;
+  }
+
+  camImg(id) {
+    const pic = this.a(id, "entity_picture");
+    if (!pic) return "";
+    const url = this._hass.hassUrl(pic) + (pic.includes("?") ? "&" : "?") + "t=" + (this._camTick || 0);
+    return `<img src="${esc(url)}" alt="" loading="lazy">`;
+  }
+
+  /* ---------- вкладки ---------- */
+  tabs() {
+    const summer = this.on(E.season);
+    const t = [
+      ["home", "Дом", "mdi:home-variant-outline"],
+      ["light", "Свет", "mdi:lightbulb-outline"],
+      ["climate", "Климат", "mdi:thermometer"],
+    ];
+    if (summer) t.push(["pool", "Бассейн", "mdi:pool"]);
+    t.push(["energy", "Энергия", "mdi:lightning-bolt-outline"], ["cams", "Камеры", "mdi:cctv"]);
+    return t;
+  }
+
+  pageHome() {
+    const al = this.s(E.alarm);
+    const armed = al && al.startsWith("armed");
+    const alText = { disarmed: "Снято с охраны", armed_away: "На охране", armed_home: "Охрана · дома", armed_night: "Охрана · ночь", arming: "Постановка…", pending: "Ожидание…", triggered: "Тревога!" }[al] || "Нет связи";
+    const dc = this.doorCount();
+    const pend = this.isPending(E.alarm) ? "pending" : "";
+    const summer = this.on(E.season);
+    const lightsOn = LIGHT_IDS.filter((id) => this.on(id)).length;
+    const preset = this.presetNow();
+    const p = this.n(E.power);
+    const ups = this.n(E.ups);
+    const upsOk = String(this.s(E.upsStatus) || "OL").startsWith("OL");
+    const bat = this.batteries();
+    const lp = this.lastPerson();
+
+    const rooms = CLIMATE.map((c) => {
+      const cur = this.a(c.climate, "current_temperature") ?? this.n(c.temp);
+      const tgt = this.a(c.climate, "temperature");
+      const heating = this.on(c.heater);
+      return `<button class="room" data-act="tab" data-id="climate">
+        <span class="room-n">${c.name}${heating ? ic("mdi:fire", "hot") : ""}</span>
+        <span class="room-t">${this.tmp(cur)}</span>
+        <span class="room-s">${tgt != null ? `цель ${nf(tgt, 0)}°` : ""}${heating ? " · греет" : ""}</span>
+      </button>`;
+    }).join("");
+
+    const stat = (icon, label, value, lvl, act, id) =>
+      `<button class="stat ${lvl}" data-act="${act}" data-id="${id}">${ic(icon)}<span class="stat-l">${label}</span><span class="stat-v">${value}</span></button>`;
+
+    // сначала камеры с движением
+    const cams = [...CAMERAS].sort((x, y) => Number(this.motion(y[1])) - Number(this.motion(x[1]))).slice(0, 3);
+
+    return `<div class="page home">
+      <div class="card sec-card ${armed ? "armed" : al === "disarmed" ? "disarmed" : ""} a-sec">
+        <div class="sec-top">
+          <span class="sec-ic">${ic(armed ? "mdi:shield-lock" : "mdi:shield-off-outline")}</span>
+          <span class="sec-txt"><span class="sec-state">${alText}</span><span class="sec-sub">${dc.open ? `открыто дверей: ${dc.open}` : `все ${dc.total} двери закрыты`}</span></span>
+        </div>
+        <div class="sec-btns">
+          <button class="big-btn ${al === "disarmed" ? "ok-on" : ""} ${pend}" data-act="disarm">${ic("mdi:shield-off-outline")}Снять</button>
+          <button class="big-btn ${armed ? "bad-on" : ""} ${pend}" data-act="arm">${ic("mdi:shield-lock-outline")}Поставить</button>
+        </div>
+      </div>
+
+      <div class="rooms a-rooms">${rooms}</div>
+
+      <div class="quick a-quick">
+        <button class="q ${this.isPending(E.warmUp) ? "pending" : ""}" data-act="warmup">${ic("mdi:fire", "hot")}<span>Прогрев</span><small>к приезду</small></button>
+        <button class="q ${preset === "away" ? "q-on" : ""}" data-act="preset" data-id="away">${ic("mdi:shield-home-outline")}<span>Дежурный</span><small>${preset === "away" ? "включён" : "уезжаю"}</small></button>
+        <button class="q ${lightsOn ? "q-light" : ""}" data-act="alloff">${ic("mdi:lightbulb-off-outline")}<span>Свет</span><small>${lightsOn ? `выключить ${lightsOn}` : "всё выключено"}</small></button>
+        <button class="q" data-act="season" data-id="${summer ? "off" : "on"}">${ic(summer ? "mdi:white-balance-sunny" : "mdi:snowflake")}<span>${summer ? "Лето" : "Зима"}</span><small>сменить сезон</small></button>
+      </div>
+
+      <div class="stats a-stats">
+        ${stat("mdi:door", "Двери", dc.open ? `открыто ${dc.open}` : "закрыты", dc.open ? "warn" : "", "more", E.doors)}
+        ${stat("mdi:water-alert", "Протечка", this.on(E.leak) ? "ПРОТЕЧКА" : "сухо", this.on(E.leak) ? "bad" : "", "more", E.leak)}
+        ${stat("mdi:smoke-detector-variant", "Дым и CO", this.on(E.smoke) ? "ТРЕВОГА" : "норма", this.on(E.smoke) ? "bad" : "", "more", E.smoke)}
+        ${stat("mdi:lightning-bolt-outline", "Сеть", p === null ? "—" : `${Math.round(p).toLocaleString("ru-RU")} Вт`, "", "tab", "energy")}
+        ${stat("mdi:battery-charging-high", "ИБП", ups === null ? "—" : `${Math.round(ups)} %${upsOk ? "" : " · от батареи"}`, upsOk ? "" : "warn", "more", E.ups)}
+        ${stat("mdi:battery-alert-variant-outline", "Датчики", bat.low ? `${bat.low} разряжено` : "в порядке", bat.low ? "warn" : "", "tab", "energy")}
+      </div>
+
+      <div class="card cams-mini a-cams">
+        <div class="head">${ic("mdi:cctv")}<span>Камеры</span><span class="head-m">${lp ? `человек ${CAM_WHERE[lp.key]} · ${lp.active ? "сейчас" : hm(lp.t)}` : "людей не было"}</span></div>
+        <div class="cm-row">${cams.map(([n, id]) => `<button class="shot ${this.motion(id) ? "motion" : ""}" data-act="more" data-id="${id}">${this.camImg(id)}<span class="shot-n">${n}</span></button>`).join("")}</div>
+      </div>
+    </div>`;
+  }
+
+  pageLight() {
+    const lightsOn = LIGHT_IDS.filter((id) => this.on(id)).length;
+    return `<div class="page light">
+      <div class="lgrps">${LIGHTS.map((g) => `<div class="lgrp">${this.section(g.group, `${g.items.filter((i) => this.on(i[1])).length} из ${g.items.length}`)}
+        <div class="tiles c${g.items.length === 3 ? 3 : 2}">${g.items.map(([n, id, i]) => this.tile(n, id, i, { tone: "light" })).join("")}</div></div>`).join("")}</div>
+      <button class="wide-btn ${lightsOn ? "" : "dim"}" data-act="alloff">${ic("mdi:lightbulb-off-outline")}${lightsOn ? `Выключить весь свет · горит ${lightsOn}` : "Весь свет выключен"}</button>
+    </div>`;
+  }
+
+  pageClimate() {
+    const preset = this.presetNow();
+    const eta = this.n(E.heatEta);
+    const zp = this.n(E.heatZonePower);
+    const thr = this.n(E.frostThr);
+    const tgt0 = this.a(CLIMATE[0].climate, "temperature");
+    const frost = !this.on(E.heatDuty) ? "выключена"
+      : thr !== null && tgt0 != null && tgt0 <= thr ? `следит · порог ${sgn(thr, 0)}°` : "ждёт режима «Дежурный»";
+    const out = this.outside();
+
+    const rows = CLIMATE.map((c) => {
+      const cur = this.a(c.climate, "current_temperature") ?? this.n(c.temp);
+      const tgt = this.a(c.climate, "temperature");
+      const heating = this.on(c.heater);
+      const pw = this.n(c.power);
+      const pend = this.isPending(c.climate) ? "pending" : "";
+      return `<div class="trow">
+        <button class="tr-name" data-act="more" data-id="${c.climate}"><i class="dot" style="background:${c.color}"></i><span>${c.name}</span>
+          <small class="${heating ? "hot" : ""}">${heating ? `греет${pw ? ` · ${nf(pw / 1000, 1)} кВт` : ""}` : "не греет"}</small></button>
+        <span class="tr-cur">${this.tmp(cur)}</span>
+        <span class="tr-set ${pend}">
+          <button class="rb" data-act="tdown" data-id="${c.climate}">${ic("mdi:minus")}</button>
+          <span class="tr-tgt"><small>цель</small>${tgt == null ? "—" : nf(tgt, 1) + "°"}</span>
+          <button class="rb" data-act="tup" data-id="${c.climate}">${ic("mdi:plus")}</button>
+        </span>
+      </div>`;
+    }).join("");
+
+    return `<div class="page climate">
+      <div class="modes a-modes">
+        ${PRESETS.map(([k, t, i]) => `<button class="mode ${preset === k ? "sel" : ""}" data-act="preset" data-id="${k}">${ic(i)}<span>${t}</span></button>`).join("")}
+        <button class="mode warm ${this.isPending(E.warmUp) ? "pending" : ""}" data-act="warmup">${ic("mdi:fire")}<span>Прогрев</span></button>
+      </div>
+      <div class="card a-rows">${rows}</div>
+      <div class="a-heaters">
+        ${this.section("Обогреватели", zp ? `${nf(zp, 1)} кВт` : "")}
+        <div class="tiles c4">${HEATERS.map(([n, id]) => this.tile(n, id, "mdi:radiator", { tone: "heat", sub: this.on(id) ? "греет" : "выключен" })).join("")}</div>
+      </div>
+      <div class="card info a-info">
+        <button class="irow" data-act="more" data-id="${E.heatEta}">${ic("mdi:timer-sand")}<span>До прогрева</span><b>${eta ? "~" + dur(eta * 60) : "—"}</b></button>
+        <button class="irow" data-act="toggle" data-id="${E.heatDuty}">${ic("mdi:snowflake-alert")}<span>Антизаморозка</span><b class="${this.on(E.heatDuty) ? "" : "warn"}">${frost}</b></button>
+        <button class="irow" data-act="more" data-id="${this.weatherEntity()}">${ic(WEATHER_ICON[out.cond] || "mdi:weather-partly-cloudy")}<span>На улице</span><b>${this.tmp(out.t)}${out.wind != null ? ` · ветер ${Math.round(out.wind)} м/с` : ""}</b></button>
+      </div>
+      <div class="card a-chart">
+        <div class="head">${ic("mdi:chart-bell-curve-cumulative")}<span>За сутки</span><span class="legend">${CLIMATE.map((c) => `<span><i style="background:${c.color}"></i>${c.name}</span>`).join("")}</span></div>
+        ${this.climateChart()}
+      </div>
+    </div>`;
+  }
+
+  pagePool() {
+    const pool = this.n(E.poolTemp);
+    const fw = this.filterWindows();
+    const flow = this.on(E.poolFlow);
+    return `<div class="page pool">
+      <div class="card pool-card a-pool">
+        <div class="head">${ic("mdi:pool")}<span>Бассейн</span><span class="head-m">${this.on(E.poolSmart) ? "фильтрация по расписанию" : esc(this.s(E.poolStatus) || "")}</span></div>
+        <div class="pool-main">
+          <button class="pool-t" data-act="more" data-id="${E.poolTemp}">${pool === null ? "—" : nf(pool, 1) + "°"}<small>вода</small></button>
+          ${this.spark(this.series(E.poolTemp, 24), { fill: false })}
+        </div>
+        <div class="track">${fw.wins.map(([a, b]) => `<i style="left:${(a * 100).toFixed(2)}%;width:${Math.max(0.6, (b - a) * 100).toFixed(2)}%"></i>`).join("")}</div>
+        <div class="track-l"><span>фильтрация за сутки</span><span>${fw.total ? dur(fw.total) : "0 мин"} · поток ${flow ? "есть" : "<b class='warn'>нет</b>"}</span></div>
+      </div>
+      <div class="tiles c3 a-ptiles">
+        ${this.tile("Фильтр", E.poolFilter, "mdi:air-filter")}
+        ${this.tile("Нагрев", E.poolHeat, "mdi:fire", { tone: "heat" })}
+        ${this.tile("Умный фильтр", E.poolSmart, "mdi:robot-outline")}
+      </div>
+      <div class="a-water">
+        ${this.section("Полив", `бочка ${this.tmp(this.n(E.barrelTemp))} · теплица ${this.n(E.soil) === null ? "—" : Math.round(this.n(E.soil)) + " %"}`)}
+        <div class="tiles c4">
+          ${WATERING.map(([n, id, i]) => this.tile(n, id, i)).join("")}
+          <button class="tile" data-act="stopwater"><span class="tile-i">${ic("mdi:stop-circle-outline")}</span><span class="tile-t"><span class="tile-n">Стоп</span><span class="tile-s">всё выключить</span></span></button>
+        </div>
+        ${this.tile("Автополив", E.autoWater, "mdi:calendar-clock", { cls: "tile-wide", sub: this.on(E.autoWater) ? "по расписанию" : "выключен" })}
+      </div>
+    </div>`;
+  }
+
+  pageEnergy() {
+    const p = this.n(E.power);
+    const kwh = this.energyDay();
+    const W = (x) => (x === null ? "—" : `${Math.round(x).toLocaleString("ru-RU")} Вт`);
+    const mainV = this.n(E.mainVolt), mainA = this.n(E.mainCurrent);
+    const bk = this.backup();
+    const bat = this.batteries();
+    const osv = this.s(E.os);
+    const v = (x, suf) => (x === null ? "—" : Math.round(x) + suf);
+    const brk = (name, icon, val, sub, id, onState) => `<button class="brk ${onState ? "on" : ""}" data-act="more" data-id="${id}">
+      <span class="brk-h">${ic(icon)}${name}<i class="led"></i></span><span class="brk-v">${val}</span><span class="brk-s">${sub}</span></button>`;
+    return `<div class="page energy">
+      <div class="card power a-power" data-act="more" data-id="${E.power}">
+        <div class="head">${ic("mdi:lightning-bolt-outline")}<span>Мощность сети</span><span class="head-m">сутки ${kwh === null ? "—" : nf(kwh, 1)} кВт·ч</span></div>
+        <div class="pw-main"><span class="pw-v">${p === null ? "—" : Math.round(p).toLocaleString("ru-RU")}<small>Вт</small></span>
+          <span class="pw-s">${mainV === null ? "" : `${Math.round(mainV)} В`}${mainA !== null ? ` · ${nf(mainA, 1)} А` : ""}</span></div>
+        ${this.spark(this.series(E.power, 12, 10 * 60e3))}
+      </div>
+      <div class="brks a-brk">
+        ${brk("Общий 63 А", "mdi:meter-electric-outline", W(this.n(E.mainPower)), `${v(mainV, " В")}`, E.mainSw, this.on(E.mainSw))}
+        ${brk("Обогрев", "mdi:radiator", W(this.n(E.heatPower)), `${v(this.n(E.heatVolt), " В")}`, E.heatSw, this.on(E.heatSw))}
+        ${brk("Плита 380", "mdi:stove", this.on(E.plita) ? "Вкл" : "Выкл", "резерв нагрева", E.plita, this.on(E.plita))}
+        ${brk("Септик", "mdi:pipe-valve", this.n(E.septikPower) === null ? (this.on(E.septik) ? "Вкл" : "Выкл") : W(this.n(E.septikPower)), this.on(E.septik) ? "обогрев" : "простой", E.septik, this.on(E.septik))}
+      </div>
+      <div class="a-loads">
+        ${this.section("Устройства")}
+        <div class="tiles c3">${LOADS.map(([n, id, i, tone]) => this.tile(n, id, i, { tone: tone || "acc", act: id.startsWith("vacuum.") ? "more" : "toggle", sub: id.startsWith("cover.") ? ({ open: "открыта", closed: "закрыта", opening: "открывается", closing: "закрывается" }[this.s(id)] || "—") : undefined })).join("")}</div>
+      </div>
+      <div class="card info a-sys">
+        <button class="irow" data-act="more" data-id="${E.cpu}">${ic("mdi:cpu-64-bit")}<span>Процессор</span><b>${v(this.n(E.cpu), " %")} · ${v(this.n(E.cpuTemp), " °C")}</b></button>
+        <button class="irow" data-act="more" data-id="${E.mem}">${ic("mdi:memory")}<span>Память · диск</span><b>${v(this.n(E.mem), " %")} · ${v(this.n(E.disk), " %")}</b></button>
+        <button class="irow" data-act="more" data-id="${E.backupOk}">${ic("mdi:cloud-upload-outline")}<span>Резервная копия</span><b class="${bk.bad ? "warn" : ""}">${bk.text}</b></button>
+        <div class="irow">${ic("mdi:battery-70")}<span>Батареи датчиков</span><b class="${bat.low ? "warn" : ""}">${bat.text}</b></div>
+        ${osv && !BAD.includes(osv) ? `<div class="irow">${ic("mdi:home-assistant")}<span>Система</span><b>HAOS ${esc(osv)}</b></div>` : ""}
+      </div>
+    </div>`;
+  }
+
+  pageCams() {
+    const lp = this.lastPerson();
+    return `<div class="page cams">
+      ${this.section("Камеры", lp ? `человек ${CAM_WHERE[lp.key]} · ${lp.active ? "сейчас" : hm(lp.t)}` : "людей не было")}
+      <div class="cam-grid">${CAMERAS.map(([n, id]) => `<button class="shot ${this.motion(id) ? "motion" : ""}" data-act="more" data-id="${id}">${this.camImg(id)}<span class="shot-n">${this.motion(id) ? ic("mdi:motion-sensor") : ""}${n}</span></button>`).join("")}</div>
+    </div>`;
   }
 
   /* ---------- рендер ---------- */
@@ -440,283 +676,44 @@ class DachaProCard extends HTMLElement {
     this._bind();
   }
 
-  /* --- летние и зимние карточки --- */
-  poolCard() {
-    const pool = this.n(E.poolTemp);
-    const fw = this.filterWindows();
-    const flow = this.on(E.poolFlow);
-    const smartOn = this.on(E.poolSmart);
-    const meta = `поток ${flow ? "есть" : "<b class='warn'>нет</b>"} · ${smartOn ? "по расписанию" : esc(this.s(E.poolStatus) || "вручную")}`;
-    return `<div class="card a-heat" id="sec-pool">
-      ${this.head("mdi:pool", "Бассейн", meta)}
-      <div class="pool-top">
-        <div class="big tap" data-act="more" data-id="${E.poolTemp}">${pool === null ? "—" : nf(pool, 1) + "°"}<small>вода</small></div>
-        ${this.spark(this.series(E.poolTemp, 24), { fill: false, cls: "spark spark-pool" })}
-      </div>
-      <div class="track">${fw.wins.map(([a, b]) => `<i style="left:${(a * 100).toFixed(2)}%;width:${Math.max(0.6, (b - a) * 100).toFixed(2)}%"></i>`).join("")}</div>
-      <div class="cf"><span>окна фильтрации за сутки</span><span>${fw.total ? dur(fw.total) : "0 мин"}</span></div>
-      <div class="chips n3 grow-end">
-        ${this.chip("Фильтр", E.poolFilter, "mdi:air-filter")}
-        ${this.chip("Нагрев", E.poolHeat, "mdi:fire", { tone: "heat" })}
-        ${this.chip("Умный", E.poolSmart, "mdi:robot-outline")}
-      </div>
-    </div>`;
-  }
-
-  heatingCard() {
-    const preset = this.presetNow();
-    const rows = CLIMATE.map((c) => {
-      const cur = this.a(c.climate, "current_temperature") ?? this.n(c.temp);
-      const tgt = this.a(c.climate, "temperature");
-      const heating = this.on(c.heater);
-      return `<div class="trow">
-        <span class="tname tap" data-act="more" data-id="${c.climate}">${ic("mdi:radiator", heating ? "hot" : "")}${c.name}</span>
-        <span class="tcur">${cur == null ? "—" : sgn(cur, 1) + "°"}</span>
-        <span class="tset">
-          <button class="rb" data-act="tdown" data-id="${c.climate}" title="Ниже">${ic("mdi:minus")}</button>
-          <span class="tval">${tgt == null ? "—" : nf(tgt, 1) + "°"}</span>
-          <button class="rb" data-act="tup" data-id="${c.climate}" title="Выше">${ic("mdi:plus")}</button>
-        </span>
-      </div>`;
-    }).join("");
-    return `<div class="card a-heat" id="sec-pool">
-      <div class="ch"><span class="ct">${ic("mdi:radiator")}<span class="eyebrow">Отопление</span></span><span class="meta">режим</span></div>
-        <div class="seg mini modes">${PRESETS.map(([k, t, i]) => `<button class="${preset === k ? "sel" : ""}" data-act="preset" data-id="${k}" title="${t}">${ic(i)}<span>${t}</span></button>`).join("")}<button class="warm ${this.isPending(E.warmUp) ? "pending" : ""}" data-act="warmup" title="Все обогреватели и бойлер — к приезду">${ic("mdi:fire")}<span>Прогрев</span></button></div>
-      <div class="thead"><span>помещение</span><span>сейчас</span><span>цель</span></div>
-      <div class="trows">${rows}</div>
-    </div>`;
-  }
-
-  wateringCard() {
-    return `<div class="card a-side" id="sec-water">
-      ${this.head("mdi:sprinkler-variant", "Полив", `бочка ${this.tmp(this.n(E.barrelTemp))}`)}
-      <div class="chips n2">
-        ${WATERING.map(([n, id, i]) => this.chip(n, id, i)).join("")}
-        <button class="chip" data-act="stopwater">${ic("mdi:stop-circle-outline")}<span class="lbl">Стоп</span></button>
-      </div>
-      <div class="list grow-end">
-        <div class="row tap" data-act="more" data-id="${E.soil}"><span>${ic("mdi:water-percent")}Теплица</span><span class="val">${this.n(E.soil) === null ? "—" : Math.round(this.n(E.soil)) + " %"}</span></div>
-        <div class="row tap" data-act="toggle" data-id="${E.autoWater}"><span>${ic("mdi:calendar-clock")}Автополив</span><span class="val">${this.on(E.autoWater) ? "по расписанию" : "выключен"}</span></div>
-      </div>
-    </div>`;
-  }
-
-  heatersCard() {
-    const eta = this.n(E.heatEta);
-    const zp = this.n(E.heatZonePower);
-    // Автоматизация держит дом выше порога, пока цель комнаты не выше порога (режим «Дежурный»)
-    const thr = this.n(E.frostThr);
-    const tgt = this.a(CLIMATE[0].climate, "temperature");
-    const frost = !this.on(E.heatDuty) ? { text: "выключена", cls: "warn" }
-      : thr !== null && tgt != null && tgt <= thr ? { text: `следит · порог ${sgn(thr, 0)}°`, cls: "" }
-      : { text: "ждёт «Дежурного»", cls: "" };
-    return `<div class="card a-side" id="sec-water">
-      ${this.head("mdi:snowflake-thermometer", "Обогреватели", zp ? `${nf(zp, 1)} кВт` : "")}
-      <div class="chips n2">${HEATERS.map(([n, id]) => this.chip(n, id, "mdi:radiator", { tone: "heat" })).join("")}</div>
-      <div class="list grow-end">
-        <div class="row tap" data-act="more" data-id="${E.heatEta}"><span>${ic("mdi:home-thermometer-outline")}До прогрева</span><span class="val">${eta ? "~" + dur(eta * 60) : "—"}</span></div>
-        <div class="row tap" data-act="toggle" data-id="${E.heatDuty}"><span>${ic("mdi:snowflake-alert")}Антизаморозка</span><span class="val ${frost.cls}">${frost.text}</span></div>
-      </div>
-    </div>`;
-  }
-
-  tmp(x) { return x === null ? "—" : `${sgn(x, 1)}°`; }
-
   _html() {
     const now = new Date();
-    const dateStr = now.toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
     const theme = this._theme || "dark";
     const status = this.status();
     const out = this.outside();
-    const ups = this.n(E.ups), upsV = this.n(E.upsVolt);
-    const upsOk = String(this.s(E.upsStatus) || "OL").startsWith("OL");
-    const temp = (x) => this.tmp(x);
-    const v = (x, d = 1, suf = "") => (x === null ? "—" : nf(x, d) + suf);
-    const summer = this.on(E.season);
-    const wEnt = this.weatherEntity();
+    const inT = this.n(E.inTemp);
+    const tabs = this.tabs();
+    if (!tabs.find((t) => t[0] === this._tab)) this._tab = "home";
+    const dateStr = now.toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
+    const page = { home: () => this.pageHome(), light: () => this.pageLight(), climate: () => this.pageClimate(), pool: () => this.pagePool(), energy: () => this.pageEnergy(), cams: () => this.pageCams() }[this._tab]();
 
-    /* охрана */
-    const al = this.s(E.alarm);
-    const alText = { disarmed: "Снято с охраны", armed_away: "На охране", armed_home: "Охрана · дома", armed_night: "Охрана · ночь", arming: "Постановка…", pending: "Ожидание…", triggered: "Тревога!" }[al] || "Нет связи";
-    const dc = this.doorCount();
-    const armed = al && al.startsWith("armed");
-
-    /* энергия */
-    const p = this.n(E.power);
-    const kwh = this.energyDay();
-    const mainV = this.n(E.mainVolt);
-    const mainA = this.n(E.mainCurrent);
-
-    /* климат */
-    const inT = this.n(E.inTemp), minZ = this.n(E.minZone);
-    const stage = STAGES.filter((id) => this.on(id)).length;
-    const rate = this.heatRate();
-    const eta = this.n(E.heatEta);
-    const targets = CLIMATE.map((c) => this.a(c.climate, "temperature")).filter((x) => x != null);
-    const maxTarget = targets.length ? Math.max(...targets) : null;
-    const climMeta = [
-      `ступень ${stage} из ${STAGES.length}`,
-      rate !== null ? `≈${nf(rate, 2)} °C/ч` : null,
-      maxTarget !== null ? `до ${sgn(maxTarget, 0)}°${eta ? ` ~${dur(eta * 60)}` : ""}` : null,
-    ].filter(Boolean).join(" · ");
-
-    /* свет */
-    const lightIds = LIGHTS.flatMap((g) => g.items.map((i) => i[1]));
-    const lightsOn = lightIds.filter((id) => this.on(id)).length;
-
-    /* камеры */
-    const lp = this.lastPerson();
-    const camMeta = lp ? (lp.active ? `человек ${CAM_WHERE[lp.key]} · сейчас` : `человек ${CAM_WHERE[lp.key]} · ${hm(lp.t)}`) : "людей не было";
-
-    /* система */
-    const bat = this.batteries();
-    const bk = this.backup();
-    const osv = this.s(E.os);
-    const host = this._config.host_label || (osv && !BAD.includes(osv) ? `HAOS ${osv}` : "");
-
-    const climateCards = CLIMATE.map((c) => {
-      const cur = this.a(c.climate, "current_temperature") ?? this.n(c.temp);
-      const tgt = this.a(c.climate, "temperature");
-      const heating = this.on(c.heater);
-      const pw = this.n(c.power);
-      const sub = heating ? `обогрев ${pw !== null && pw > 0 ? nf(pw / 1000, 1) + " кВт" : "вкл"}` : "обогрев выкл";
-      return `<div class="room tap" data-act="more" data-id="${c.climate}">
-        <div class="room-h"><span class="room-n"><i class="dotc" style="background:${c.color}"></i>${c.name}</span><span class="muted">${tgt != null ? `цель ${Math.round(tgt)}°` : ""}</span></div>
-        <div class="big2">${temp(cur)}</div>
-        <div class="muted ${heating ? "hot" : ""}">${sub}</div>
-      </div>`;
-    }).join("");
-
-    const loadTile = (title, icon, value, sub, id, onState) => `
-      <div class="load tap ${onState ? "on" : ""}" data-act="more" data-id="${id}">
-        <div class="load-h">${ic(icon)}<span>${title}</span></div>
-        <div class="load-v">${value}</div>
-        <div class="muted">${sub}</div>
-      </div>`;
-    const septP = this.n(E.septikPower);
-    const septOn = this.on(E.septik);
-    const plitaOn = this.on(E.plita);
-    const heatP = this.n(E.heatPower), mainP = this.n(E.mainPower);
-    const W = (x) => (x === null ? "—" : `${Math.round(x).toLocaleString("ru-RU")} Вт`);
-
-
-    return `
-<div class="root theme-${theme} ${this._fit.mobile ? "mobile" : "fit"} ${this._fit.portrait ? "portrait" : ""}" style="${this._fit.style}">
-
-  <main class="main">
-    <header class="top">
-      <div class="ttl">
-        <div class="eyebrow">${esc(this._config.title || "Дача")} · ${esc(dateStr)} · ${hm(now)}</div>
-        <h1 class="title lvl-${status.lvl}">${status.text}</h1>
-      </div>
-      <div class="pills">
-        <span class="seg season">
-          <button class="${summer ? "sel" : ""}" data-act="season" data-id="on">${ic("mdi:white-balance-sunny")}<span>Лето</span></button>
-          <button class="${summer ? "" : "sel"}" data-act="season" data-id="off">${ic("mdi:snowflake")}<span>Зима</span></button>
-        </span>
-        <span class="pill tap" data-act="more" data-id="${wEnt}">${ic(WEATHER_ICON[out.cond] || "mdi:weather-partly-cloudy")}${temp(out.t)}</span>
-        <span class="pill tap ${upsOk ? "" : "warn"}" data-act="more" data-id="${E.ups}">${ic("mdi:battery-charging-high")}ИБП ${ups === null ? "—" : Math.round(ups) + "%"}${upsV !== null ? ` · ${Math.round(upsV)} В` : ""}</span>
-        <button class="pill icon" data-act="theme" title="Тема">${ic(theme === "dark" ? "mdi:weather-sunny" : "mdi:weather-night")}</button>
-      </div>
-    </header>
-
-    <section class="grid">
-      <div class="card a-sec" id="sec-security">
-        ${this.head(armed ? "mdi:shield-lock-outline" : "mdi:shield-off-outline", "Охрана", `${dc.total} зон`)}
-        <div class="h2 ${al === "triggered" || armed ? "bad" : al === "disarmed" ? "ok" : ""}">${alText}</div>
-        <div class="muted ${dc.open ? "warn" : ""}">${dc.open ? `открыто дверей: ${dc.open}` : "все двери закрыты"}</div>
-        <div class="btns grow-end">
-          <button class="btn ${!armed && al === "disarmed" ? "ok-on" : ""} ${this.isPending(E.alarm) ? "pending" : ""}" data-act="disarm">${ic("mdi:shield-off-outline")}Снято с охраны</button>
-          <button class="btn ${armed ? "bad-on" : ""} ${this.isPending(E.alarm) ? "pending" : ""}" data-act="arm">${ic("mdi:shield-lock-outline")}На охране</button>
-        </div>
-      </div>
-
-      <div class="card a-pow tap" id="sec-energy" data-act="more" data-id="${E.power}">
-        ${this.head("mdi:lightning-bolt-outline", "Мощность сети", "сейчас")}
-        <div class="pow">
-          <div class="big">${p === null ? "—" : Math.round(p).toLocaleString("ru-RU")}<small>Вт</small></div>
-          ${this.spark(this.series(E.power, 12, 10 * 60e3))}
-        </div>
-        <div class="cf grow-end"><span>Общий 63 А · ${v(mainV, 0)} В</span><span>сутки ${kwh === null ? "—" : nf(kwh, 1)} кВт·ч</span></div>
-      </div>
-
-      <div class="card a-tmp split">
-        <div class="half tap" data-act="more" data-id="${wEnt}">
-          <span class="ct">${ic("mdi:tree-outline")}<span class="eyebrow">На улице</span></span>
-          <div class="big">${temp(out.t)}</div>
-          <div class="muted">${out.wind === null ? "&nbsp;" : `ветер ${Math.round(out.wind)} м/с`}</div>
-        </div>
-        <div class="vsep"></div>
-        <div class="half tap" data-act="more" data-id="${E.inTemp}">
-          <span class="ct">${ic("mdi:home-thermometer-outline")}<span class="eyebrow">В доме</span></span>
-          <div class="big">${temp(inT)}</div>
-          <div class="muted">мин. зона ${temp(minZ)}</div>
-        </div>
-      </div>
-
-      <div class="card a-sens">
-        ${this.head("mdi:shield-check-outline", "Датчики")}
-        <div class="list">
-          <div class="row tap" data-act="more" data-id="${E.doors}"><span>${ic("mdi:door", dc.open ? "warn" : "")}Двери</span><span class="val ${dc.open ? "warn" : ""}">${dc.open ? `открыто · ${dc.open}` : `закрыты · ${dc.total}`}</span></div>
-          <div class="row tap" data-act="more" data-id="${E.leak}"><span>${ic("mdi:water-alert", this.on(E.leak) ? "bad" : "")}Протечка</span><span class="val ${this.on(E.leak) ? "bad" : ""}">${this.on(E.leak) ? "ПРОТЕЧКА" : "сухо"} · ${(this.a(E.leak, "entity_id") || []).length || 1}</span></div>
-          <div class="row tap" data-act="more" data-id="${E.smoke}"><span>${ic("mdi:smoke-detector-variant", this.on(E.smoke) ? "bad" : "")}Дым и CO</span><span class="val ${this.on(E.smoke) ? "bad" : ""}">${this.on(E.smoke) ? "ТРЕВОГА" : "норма"} · ${(this.a(E.smoke, "entity_id") || []).length || 1}</span></div>
-        </div>
-      </div>
-
-      <div class="card a-clim" id="sec-climate">
-        ${this.head("mdi:thermometer", "Климат", esc(climMeta))}
-        <div class="rooms">${climateCards}</div>
-        ${this.climateChart()}
-        <div class="cf"><span class="legend">${CLIMATE.map((c) => `<span><i style="background:${c.color}"></i>${c.name}</span>`).join("")}</span><span>24 часа</span></div>
-      </div>
-
-      <div class="card a-light" id="sec-light">
-        ${this.head("mdi:lightbulb-group-outline", "Свет", `включено ${lightsOn} из ${lightIds.length}`)}
-        <div class="lgroups">
-          ${LIGHTS.map((g) => `<div class="lg"><span class="sub">${g.group}</span><div class="chips n4">${g.items.map(([n, id, i]) => this.chip(n, id, i, { tone: "light" })).join("")}</div></div>`).join("")}
-        </div>
-      </div>
-
-      ${summer ? this.poolCard() : this.heatingCard()}
-
-      <div class="card a-load" id="sec-loads">
-        ${this.head("mdi:flash-outline", "Нагрузки и автоматы", `суммарно ${p === null ? "—" : nf(p / 1000, 2)} кВт`)}
-        <div class="loads">
-          ${loadTile("Общий 63 А", "mdi:meter-electric-outline", W(mainP), `${v(mainV, 0)} В${mainA !== null ? ` · ${nf(mainA, 1)} А` : ""}`, E.mainSw, this.on(E.mainSw))}
-          ${loadTile("Обогрев", "mdi:radiator", W(heatP), `${v(this.n(E.heatVolt), 0)} В`, E.heatSw, this.on(E.heatSw))}
-          ${loadTile("Плита 380", "mdi:stove", plitaOn ? "Вкл" : "Выкл", "резерв нагрева", E.plita, plitaOn)}
-          ${loadTile("Септик", "mdi:pipe-valve", septP === null ? (septOn ? "Вкл" : "Выкл") : W(septP), septOn ? "обогрев" : "простой", E.septik, septOn)}
-        </div>
-        <div class="chips n3 grow-end">${LOADS.map(([n, id, i]) => this.chip(n, id, i, { act: id.startsWith("vacuum.") ? "more" : "toggle", tone: /heating-coil|water-boiler/.test(i) ? "heat" : "" })).join("")}</div>
-      </div>
-
-      ${summer ? this.wateringCard() : this.heatersCard()}
-
-      <div class="card a-cam" id="sec-cams">
-        ${this.head("mdi:cctv", "Камеры", esc(camMeta))}
-        <div class="cams">${CAMERAS.map(([n, id]) => {
-          const pic = this.a(id, "entity_picture");
-          const src = pic ? this._hass.hassUrl(pic) : "";
-          // Движение по данным Frigate: binary_sensor.<камера>_motion
-          const key = id.split(".")[1];
-          const moving = this.on(`binary_sensor.${key}_motion`) || this.on(`binary_sensor.${key}_all_occupancy`);
-          return `<div class="cam tap" data-act="more" data-id="${id}"><div class="shot ${moving ? "motion" : ""}">${src ? `<img src="${esc(src)}" loading="lazy" alt="">` : ""}</div><span>${n}</span></div>`;
-        }).join("")}</div>
-      </div>
-
-      <div class="card a-sys" id="sec-system">
-        ${this.head("mdi:server-outline", "Система", esc(host))}
-        <div class="list sys">
-          <div class="row tap" data-act="more" data-id="${E.cpu}"><span>${ic("mdi:cpu-64-bit")}Процессор</span><span class="val">${v(this.n(E.cpu), 0, " %")} · ${v(this.n(E.cpuTemp), 0, " °C")}</span></div>
-          <div class="row tap" data-act="more" data-id="${E.mem}"><span>${ic("mdi:memory")}Память · диск</span><span class="val">${v(this.n(E.mem), 0, " %")} · ${v(this.n(E.disk), 0, " %")}</span></div>
-          <div class="row tap" data-act="more" data-id="${E.backupOk}"><span>${ic("mdi:cloud-upload-outline")}Бэкап</span><span class="val ${bk.cls}">${bk.text}</span></div>
-          <div class="row"><span>${ic("mdi:battery-70")}Батареи</span><span class="val ${bat.cls}">${bat.text}</span></div>
-        </div>
-      </div>
-    </section>
-  </main>
+    return `<div class="root theme-${theme} ${this._fit.mobile ? "mobile" : "fit"} ${this._fit.portrait ? "portrait" : "landscape"}" style="${this._fit.style}">
+  <header class="hdr">
+    <div class="clock"><span class="time">${hm(now)}</span><span class="date">${esc(this._config.title || "Дача")} · ${esc(dateStr)}</span></div>
+    <div class="hdr-r">
+      <span class="status ${status.lvl}">${ic(status.icon)}${status.text}</span>
+      <button class="temps" data-act="more" data-id="${this.weatherEntity()}">
+        <span>${ic(WEATHER_ICON[out.cond] || "mdi:weather-partly-cloudy")}${this.tmp(out.t)}</span>
+        <span>${ic("mdi:home-thermometer-outline")}${this.tmp(inT)}</span>
+      </button>
+      <button class="ibtn" data-act="theme" title="Тема">${ic(theme === "dark" ? "mdi:weather-sunny" : "mdi:weather-night")}</button>
+    </div>
+  </header>
+  <main class="main">${page}</main>
+  <nav class="tabs">${tabs.map(([k, t, i]) => `<button class="tab ${this._tab === k ? "sel" : ""}" data-act="tab" data-id="${k}">${ic(i)}<span>${t}</span></button>`).join("")}</nav>
   ${this.padHtml()}
 </div>`;
+  }
+
+  padHtml() {
+    if (!this._pad) return "";
+    const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "back", "0", "ok"];
+    const label = { back: ic("mdi:backspace-outline"), ok: ic("mdi:check") };
+    return `<div class="pad-bg" data-act="pad" data-id="close"><div class="pad" data-act="noop">
+      <div class="pad-h">${ic("mdi:shield-off-outline")}<span>Снять с охраны</span><button class="pad-x" data-act="pad" data-id="close">${ic("mdi:close")}</button></div>
+      <div class="pad-code ${this._pad.err ? "bad" : ""}">${this._pad.err || (this._pad.code ? "•".repeat(this._pad.code.length) : "введите код")}</div>
+      <div class="pad-keys">${keys.map((k) => `<button class="pk ${k === "ok" ? "pk-ok" : ""}" data-act="pad" data-id="${k}">${label[k] || k}</button>`).join("")}</div>
+    </div></div>`;
   }
 
   _bind() {
@@ -756,17 +753,6 @@ class DachaProCard extends HTMLElement {
     }
   }
 
-  padHtml() {
-    if (!this._pad) return "";
-    const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "back", "0", "ok"];
-    const label = { back: ic("mdi:backspace-outline"), ok: ic("mdi:check") };
-    return `<div class="pad-bg" data-act="pad" data-id="close"><div class="pad" data-act="noop">
-      <div class="pad-h">${ic("mdi:shield-off-outline")}<span>Снять с охраны</span><button class="pad-x" data-act="pad" data-id="close">${ic("mdi:close")}</button></div>
-      <div class="pad-code ${this._pad.err ? "bad" : ""}">${this._pad.err || (this._pad.code ? "•".repeat(this._pad.code.length) : "введите код")}</div>
-      <div class="pad-keys">${keys.map((k) => `<button class="pk ${k === "ok" ? "pk-ok" : ""}" data-act="pad" data-id="${k}">${label[k] || k}</button>`).join("")}</div>
-    </div></div>`;
-  }
-
   _setTemp(id, dir) {
     const o = this.st(id);
     if (!o) return;
@@ -781,6 +767,7 @@ class DachaProCard extends HTMLElement {
   _action(act, id) {
     switch (act) {
       case "noop": return;
+      case "tab": this._tab = id; return this._render(true);
       case "more": return this._more(id);
       case "toggle": {
         const st = this.s(id);
@@ -790,6 +777,12 @@ class DachaProCard extends HTMLElement {
         if (dom === "cover") return this._call("cover", "toggle", { entity_id: id });
         if (dom === "automation") return this._call("automation", st === "on" ? "turn_off" : "turn_on", { entity_id: id });
         return this._call("homeassistant", "toggle", { entity_id: id });
+      }
+      case "alloff": {
+        const onIds = LIGHT_IDS.filter((x) => this.on(x));
+        if (!onIds.length) return;
+        onIds.forEach((x) => this.markPending(x));
+        return this._call("switch", "turn_off", { entity_id: onIds });
       }
       case "warmup": {
         // «Нагрев дома»: 23° комната/кухня, 15° тамбур, лестница и бойлер — все ступени сразу
@@ -803,11 +796,14 @@ class DachaProCard extends HTMLElement {
         for (const c of CLIMATE) {
           const modes = this.a(c.climate, "preset_modes") || [];
           const mode = modes.includes(id) ? id : id === "comfort" && modes.includes("home") ? "home" : null;
-          if (mode) this._call("climate", "set_preset_mode", { entity_id: c.climate, preset_mode: mode });
+          if (mode) { this.markPending(c.climate); this._call("climate", "set_preset_mode", { entity_id: c.climate, preset_mode: mode }); }
         }
         return;
       }
-      case "arm": if (String(this.s(E.alarm)).startsWith("armed")) return; this.markPending(E.alarm); return this._call("alarm_control_panel", "alarm_arm_away", { entity_id: E.alarm });
+      case "arm":
+        if (String(this.s(E.alarm)).startsWith("armed")) return;
+        this.markPending(E.alarm);
+        return this._call("alarm_control_panel", "alarm_arm_away", { entity_id: E.alarm });
       case "disarm": {
         if (this.s(E.alarm) === "disarmed") return;
         if (this.a(E.alarm, "code_format")) { this._pad = { code: "", err: "" }; return this._render(true); }
@@ -837,228 +833,270 @@ class DachaProCard extends HTMLElement {
 const STYLES = `
 :host { display:block; }
 .root {
-  --bg:#121315; --card:#18191c; --card2:#1d1e22; --line:#2a2b30; --line2:#232428;
-  --text:#f3f3f5; --muted:#9b9ca3; --faint:#6d6e75; --blue:#8ab9ec; --blue-bg:#1f2c3d; --blue-text:#a4cbf3;
-  --orange:#e6a24a; --grey:#a9aab0; --red:#ef6b63; --warn:#e6a24a; --grid:#25262a; --spark-fill:rgba(138,185,236,.14);
-  --primary-btn:#8ab9ec; --primary-btn-text:#0f1a26; --icon:#8b8c93;
-  --green:#5fc48a; --green-bg:rgba(95,196,138,.18); --red-bg:rgba(239,107,99,.2);
-  --heat:#f08f86; --heat-bg:rgba(239,107,99,.16); --light:#f2cf6b; --light-bg:rgba(242,200,90,.15);
-  font-family: Inter, -apple-system, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
-  font-size:13px; color:var(--text); background:var(--bg);
-  display:grid; grid-template-columns:minmax(0,1fr); box-sizing:border-box;
+  --bg:#0e0e10; --surface:#161618; --surface2:#1d1d20; --line:rgba(255,255,255,.07); --line2:rgba(255,255,255,.12);
+  --text:#f3f1ec; --muted:#9a968f; --faint:#64615c;
+  --accent:#d8c3a0; --accent-bg:rgba(216,195,160,.13); --accent-text:#ead9bb;
+  --light:#f2c95e; --light-bg:rgba(242,201,94,.15); --heat:#ef8a7c; --heat-bg:rgba(239,138,124,.15);
+  --green:#7fcf9c; --green-bg:rgba(127,207,156,.15); --red:#ef6f63; --red-bg:rgba(239,111,99,.17); --warn:#e9a84f;
+  --c1:#9fc2e6; --c2:#e6b26a; --c3:#a8a49c; --spark:rgba(216,195,160,.12); --motion:#ffd60a;
+  font-family: Inter, -apple-system, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+  font-size:16px; color:var(--text); background:var(--bg); position:relative;
+  display:flex; flex-direction:column; box-sizing:border-box;
   -webkit-font-smoothing:antialiased; font-feature-settings:"tnum" 1, "cv11" 1;
 }
 .root.theme-light {
-  --bg:#f2f2f0; --card:#ffffff; --card2:#f7f7f5; --line:#e1e0dc; --line2:#ecebe7;
-  --text:#18191c; --muted:#6b6c72; --faint:#a3a4a9; --blue:#3b82c9; --blue-bg:#e2edf9; --blue-text:#245f9e;
-  --orange:#d48a2a; --grey:#8d8e94; --grid:#ecebe7; --spark-fill:rgba(59,130,201,.12); --primary-btn:#3b82c9; --primary-btn-text:#fff; --icon:#85868c;
-  --green:#23935a; --green-bg:#dcf2e5; --red:#d64b42; --red-bg:#fbe1de; --heat:#c4473f; --heat-bg:#fbe4e1; --light:#a77a00; --light-bg:#fbf0cc;
+  --bg:#f3f1ec; --surface:#ffffff; --surface2:#f8f6f2; --line:rgba(0,0,0,.07); --line2:rgba(0,0,0,.12);
+  --text:#1c1b19; --muted:#77736c; --faint:#a9a59e;
+  --accent:#8f7349; --accent-bg:rgba(143,115,73,.12); --accent-text:#6f5733;
+  --light:#a87a00; --light-bg:#fbefc9; --heat:#c34a3d; --heat-bg:#fbe2de; --green:#23885a; --green-bg:#daf0e3; --red:#cf4237; --red-bg:#fbe0dd; --warn:#b5761f;
+  --c1:#4f86bf; --c2:#c98a2b; --c3:#8a867f; --spark:rgba(143,115,73,.1);
 }
 .root.fit { overflow:hidden; }
-.root { position:relative; }
 .root.mobile { min-height:calc(100vh - var(--header-height, 56px)); }
 *, *::before, *::after { box-sizing:border-box; }
-button { font:inherit; color:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent; }
-.tap { cursor:pointer; }
-.i { --mdc-icon-size:16px; width:16px; height:16px; color:var(--icon); flex:none; display:inline-flex; }
-.i.hot { color:var(--orange); } .i.warn { color:var(--warn); } .i.bad { color:var(--red); }
-.eyebrow { font-size:10px; font-weight:600; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); }
-.muted { color:var(--muted); font-size:12px; }
-.warn { color:var(--warn); } .bad { color:var(--red); }
+button { font:inherit; color:inherit; cursor:pointer; border:0; background:none; padding:0; text-align:left; -webkit-tap-highlight-color:transparent; }
+.i { --mdc-icon-size:22px; width:22px; height:22px; flex:none; display:inline-flex; color:var(--muted); }
+.hot { color:var(--heat) !important; } .warn { color:var(--warn) !important; } .bad { color:var(--red) !important; }
 
+/* шапка */
+.hdr { display:flex; justify-content:space-between; align-items:center; gap:20px; padding:22px 28px 14px; flex:none; }
+.clock { display:flex; flex-direction:column; min-width:0; }
+.time { font-size:58px; font-weight:200; letter-spacing:-.03em; line-height:1; }
+.date { font-size:15px; color:var(--muted); margin-top:6px; text-transform:lowercase; white-space:nowrap; }
+.date::first-letter { text-transform:uppercase; }
+.hdr-r { display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:flex-end; }
+.status { display:inline-flex; align-items:center; gap:10px; height:48px; padding:0 18px; border-radius:24px; background:var(--surface); border:1px solid var(--line); font-size:17px; font-weight:500; white-space:nowrap; }
+.status .i { color:var(--green); }
+.status.warn { color:var(--warn); background:rgba(233,168,79,.1); border-color:transparent; } .status.warn .i { color:var(--warn); }
+.status.bad { color:var(--red); background:var(--red-bg); border-color:transparent; animation:alarm 1.4s ease-in-out infinite; } .status.bad .i { color:var(--red); }
+@keyframes alarm { 50% { opacity:.6; } }
+.temps { display:inline-flex; gap:16px; height:48px; padding:0 18px; border-radius:24px; background:var(--surface); border:1px solid var(--line); align-items:center; font-size:17px; font-weight:500; }
+.temps span { display:inline-flex; align-items:center; gap:7px; }
+.ibtn { width:48px; height:48px; border-radius:24px; background:var(--surface); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; }
 
-/* main */
-.main { padding:12px 14px 14px; min-width:0; min-height:0; display:flex; flex-direction:column; gap:10px; }
-.top { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
-.title { font-size:22px; font-weight:600; letter-spacing:-.02em; margin:3px 0 0; line-height:1.15; }
-.title.lvl-bad { color:var(--red); } .title.lvl-warn { color:var(--warn); }
-.pills { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-.pill { display:inline-flex; align-items:center; gap:7px; height:34px; padding:0 12px; border:1px solid var(--line); border-radius:10px; background:var(--card); font-size:13px; font-weight:500; white-space:nowrap; }
-.pill .i { color:var(--blue); }
-.pill.warn .i { color:var(--warn); }
-.pill.icon { width:34px; justify-content:center; padding:0; }
-.pill.icon .i { color:var(--muted); }
-.seg { display:inline-flex; gap:2px; padding:3px; border:1px solid var(--line); border-radius:10px; background:var(--card); }
-.seg button { display:inline-flex; align-items:center; gap:6px; border:0; background:none; border-radius:7px; height:26px; padding:0 10px; font-size:12.5px; color:var(--muted); }
-.seg button .i { color:inherit; }
-.seg button.sel { background:var(--primary-btn); color:var(--primary-btn-text); font-weight:500; }
-.seg.mini button { height:22px; padding:0 7px; font-size:11px; gap:4px; }
-.seg.mini .i { --mdc-icon-size:13px; width:13px; height:13px; }
+/* содержимое */
+.main { flex:1; min-height:0; padding:6px 28px 14px; display:flex; flex-direction:column; }
+.page { flex:1; min-height:0; display:grid; gap:16px; }
+.card { background:var(--surface); border:1px solid var(--line); border-radius:24px; padding:20px 22px; min-width:0; min-height:0; overflow:hidden; }
+.head { display:flex; align-items:center; gap:10px; font-size:15px; font-weight:500; color:var(--muted); margin-bottom:12px; }
+.head .i { --mdc-icon-size:20px; width:20px; height:20px; color:var(--accent); }
+.head-m { margin-left:auto; font-weight:400; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sec { display:flex; align-items:baseline; justify-content:space-between; font-size:15px; font-weight:500; color:var(--muted); margin:2px 4px 10px; letter-spacing:.01em; }
+.sec-m { font-weight:400; font-size:14px; }
 
-/* сетка: 12 колонок, 4 ряда, на планшете всё помещается в экран */
-.grid { flex:1; min-height:0; display:grid; gap:10px;
-  grid-template-columns:repeat(12, minmax(0,1fr));
-  grid-template-rows:minmax(0,0.66fr) minmax(0,0.9fr) minmax(0,1.08fr) minmax(0,0.84fr);
-  grid-template-areas:
-    "sec sec sec pow pow pow tmp tmp tmp sns sns sns"
-    "clm clm clm clm clm clm lgt lgt lgt lgt lgt lgt"
-    "heat heat heat heat lod lod lod lod lod sid sid sid"
-    "cam cam cam cam cam cam cam sys sys sys sys sys"; }
-.a-sec { grid-area:sec; } .a-pow { grid-area:pow; } .a-tmp { grid-area:tmp; } .a-sens { grid-area:sns; }
-.a-clim { grid-area:clm; } .a-light { grid-area:lgt; } .a-heat { grid-area:heat; } .a-load { grid-area:lod; }
-.a-side { grid-area:sid; } .a-cam { grid-area:cam; } .a-sys { grid-area:sys; }
+/* плитки */
+.tiles { display:grid; gap:12px; }
+.tiles.c2 { grid-template-columns:repeat(2, minmax(0,1fr)); }
+.tiles.c3 { grid-template-columns:repeat(3, minmax(0,1fr)); }
+.tiles.c4 { grid-template-columns:repeat(4, minmax(0,1fr)); }
+.tile { display:flex; flex-direction:column; justify-content:space-between; gap:10px; min-height:104px; padding:16px 18px; border-radius:20px; background:var(--surface); border:1px solid var(--line); transition:background .2s, border-color .2s; min-width:0; }
+.tile-i { width:42px; height:42px; border-radius:21px; background:var(--surface2); display:flex; align-items:center; justify-content:center; }
+.tile-i .i { --mdc-icon-size:24px; width:24px; height:24px; }
+.tile-t { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.tile-n { font-size:18px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tile-s { font-size:14px; color:var(--muted); }
+.tile.on { border-color:transparent; }
+.tile.on.t-acc { background:var(--accent-bg); } .tile.on.t-acc .tile-i { background:var(--accent); } .tile.on.t-acc .tile-i .i { color:#1a1712; } .tile.on.t-acc .tile-s { color:var(--accent-text); }
+.tile.on.t-light { background:var(--light-bg); } .tile.on.t-light .tile-i { background:var(--light); } .tile.on.t-light .tile-i .i { color:#2a2108; } .tile.on.t-light .tile-s { color:var(--light); }
+.tile.on.t-heat { background:var(--heat-bg); } .tile.on.t-heat .tile-i { background:var(--heat); } .tile.on.t-heat .tile-i .i { color:#2b0f0b; } .tile.on.t-heat .tile-s { color:var(--heat); }
+.tile.na { opacity:.4; }
+.tile:active, .q:active, .room:active, .stat:active, .mode:active, .rb:active, .big-btn:active { transform:scale(.98); }
+.pending { animation:pend 1s ease-in-out infinite; border-color:var(--accent) !important; }
+@keyframes pend { 50% { box-shadow:0 0 0 4px var(--accent-bg); } }
+.wide-btn { display:flex; align-items:center; justify-content:center; gap:12px; height:76px; border-radius:20px; background:var(--surface); border:1px solid var(--line); font-size:18px; font-weight:500; }
+.wide-btn.dim { color:var(--muted); }
+.tile-wide { flex-direction:row; align-items:center; justify-content:flex-start; min-height:76px; margin-top:12px; width:100%; }
 
-.card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:11px 13px 12px; min-width:0; min-height:0; overflow:hidden; display:flex; flex-direction:column; transition:box-shadow .3s, border-color .3s; }
-.card.flash { border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-bg); }
-.grow-end { margin-top:auto; }
-.ch { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:7px; min-height:18px; flex:none; }
-.ct { display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }
-.ct .i { --mdc-icon-size:15px; width:15px; height:15px; color:var(--blue); }
-.meta { color:var(--muted); font-size:11.5px; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
-.meta b { font-weight:500; }
-.h2 { font-size:17px; font-weight:600; letter-spacing:-.01em; }
-.big { font-size:30px; font-weight:300; letter-spacing:-.02em; line-height:1.1; white-space:nowrap; }
-.big small { font-size:12px; font-weight:400; color:var(--muted); letter-spacing:0; margin-left:5px; }
-.big2 { font-size:22px; font-weight:300; letter-spacing:-.01em; margin:3px 0 1px; }
-.cf { display:flex; justify-content:space-between; gap:8px; align-items:center; margin-top:6px; font-size:11.5px; color:var(--muted); }
+/* ===== Дом ===== */
+.home { grid-template-columns:repeat(6, minmax(0,1fr)); grid-template-rows:auto auto auto auto minmax(0,1fr);
+  grid-template-areas:"sec sec sec sec sec sec" "rooms rooms rooms rooms rooms rooms" "quick quick quick quick quick quick" "stats stats stats stats stats stats" "cams cams cams cams cams cams"; }
+.a-sec { grid-area:sec; } .a-rooms { grid-area:rooms; } .a-quick { grid-area:quick; } .a-stats { grid-area:stats; } .a-cams { grid-area:cams; }
+.sec-card { display:flex; align-items:center; gap:24px; padding:22px 24px; }
+.sec-top { display:flex; align-items:center; gap:18px; flex:1; min-width:0; }
+.sec-ic { width:64px; height:64px; border-radius:32px; background:var(--surface2); display:flex; align-items:center; justify-content:center; flex:none; }
+.sec-ic .i { --mdc-icon-size:32px; width:32px; height:32px; }
+.sec-card.armed .sec-ic { background:var(--red-bg); } .sec-card.armed .sec-ic .i { color:var(--red); }
+.sec-card.disarmed .sec-ic { background:var(--green-bg); } .sec-card.disarmed .sec-ic .i { color:var(--green); }
+.sec-txt { display:flex; flex-direction:column; gap:4px; min-width:0; }
+.sec-state { font-size:28px; font-weight:500; letter-spacing:-.01em; white-space:nowrap; }
+.sec-card.armed .sec-state { color:var(--red); } .sec-card.disarmed .sec-state { color:var(--green); }
+.sec-sub { font-size:15px; color:var(--muted); }
+.sec-btns { display:grid; grid-template-columns:1fr 1fr; gap:10px; flex:none; width:330px; }
+.big-btn { display:flex; align-items:center; justify-content:center; gap:10px; height:64px; border-radius:18px; background:var(--surface2); border:1px solid var(--line); font-size:18px; font-weight:500; }
+.big-btn.ok-on { background:var(--green-bg); color:var(--green); border-color:transparent; } .big-btn.ok-on .i { color:var(--green); }
+.big-btn.bad-on { background:var(--red-bg); color:var(--red); border-color:transparent; } .big-btn.bad-on .i { color:var(--red); }
 
-.btns { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding-top:8px; flex:none; }
-.btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; height:34px; white-space:nowrap; min-width:0; padding:0 6px; border-radius:9px; border:1px solid var(--line); background:var(--card2); font-size:13px; font-weight:500; }
-.btn.primary { background:var(--primary-btn); color:var(--primary-btn-text); border-color:transparent; }
-.btn.primary .i { color:inherit; }
-.btn.ok-on { background:var(--green-bg); border-color:transparent; color:var(--green); }
-.btn.bad-on { background:var(--red-bg); border-color:transparent; color:var(--red); }
-.btn.ok-on .i, .btn.bad-on .i { color:inherit; }
-.h2.ok { color:var(--green); }
+.rooms { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:16px; }
+.room { display:flex; flex-direction:column; gap:6px; padding:20px 22px; border-radius:24px; background:var(--surface); border:1px solid var(--line); }
+.room-n { display:flex; align-items:center; justify-content:space-between; font-size:16px; color:var(--muted); font-weight:500; }
+.room-n .i { --mdc-icon-size:20px; width:20px; height:20px; }
+.room-t { font-size:52px; font-weight:200; letter-spacing:-.03em; line-height:1.05; }
+.room-s { font-size:14px; color:var(--muted); }
 
-.pow { display:flex; align-items:flex-end; gap:12px; flex:1; min-height:0; }
-.spark { flex:1; min-width:0; height:100%; max-height:46px; display:block; }
-.pool-top { display:flex; align-items:center; gap:12px; flex:1; min-height:0; }
-.spark-pool { max-height:52px; }
-.chart { width:100%; flex:1; min-height:30px; display:block; margin-top:8px; }
-.chart-empty { display:flex; align-items:center; justify-content:center; color:var(--faint); font-size:12px; }
+.quick { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px; }
+.q { display:flex; flex-direction:column; align-items:flex-start; gap:4px; padding:16px 18px; border-radius:20px; background:var(--surface); border:1px solid var(--line); min-height:110px; }
+.q .i { --mdc-icon-size:26px; width:26px; height:26px; color:var(--accent); margin-bottom:auto; }
+.q span { font-size:18px; font-weight:500; margin-top:8px; }
+.q small { font-size:13px; color:var(--muted); }
+.q.q-on { background:var(--accent-bg); border-color:transparent; } .q.q-on small { color:var(--accent-text); }
+.q.q-light { background:var(--light-bg); border-color:transparent; } .q.q-light .i { color:var(--light); } .q.q-light small { color:var(--light); }
 
-.split { flex-direction:row; gap:12px; }
-.split .half { flex:1; min-width:0; display:flex; flex-direction:column; }
-.split .big { margin-top:8px; }
-.split .muted { margin-top:2px; }
-.vsep { width:1px; background:var(--line); }
+.stats { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px; }
+.stat { display:grid; grid-template-columns:auto 1fr; grid-template-rows:auto auto; column-gap:14px; align-items:center; padding:14px 18px; border-radius:18px; background:var(--surface); border:1px solid var(--line); }
+.stat .i { grid-row:1 / 3; --mdc-icon-size:24px; width:24px; height:24px; }
+.stat-l { font-size:14px; color:var(--muted); }
+.stat-v { font-size:17px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.stat.warn { border-color:rgba(233,168,79,.35); } .stat.warn .i, .stat.warn .stat-v { color:var(--warn); }
+.stat.bad { background:var(--red-bg); border-color:transparent; } .stat.bad .i, .stat.bad .stat-v { color:var(--red); }
 
-.list { display:flex; flex-direction:column; }
-.row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:4px 0; border-bottom:1px solid var(--line2); font-size:13px; min-height:25px; }
-.row > span:first-child { display:inline-flex; align-items:center; gap:8px; }
-.row:last-child { border-bottom:0; }
-.row .val { color:var(--muted); font-size:12px; text-align:right; white-space:nowrap; }
-.row .val.warn { color:var(--warn); } .row .val.bad { color:var(--red); }
-.sys { flex:1; justify-content:space-between; }
+.cams-mini { display:flex; flex-direction:column; padding:18px; }
+.cm-row { flex:1; min-height:0; display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px; }
+.shot { position:relative; border-radius:16px; overflow:hidden; background:var(--surface2); border:2px solid transparent; min-height:0; }
+.shot img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.shot-n { position:absolute; left:10px; bottom:10px; display:inline-flex; align-items:center; gap:6px; padding:5px 11px; border-radius:12px; background:rgba(0,0,0,.55); color:#fff; font-size:14px; font-weight:500; backdrop-filter:blur(6px); }
+.shot-n .i { --mdc-icon-size:16px; width:16px; height:16px; color:var(--motion); }
+.shot.motion { border-color:var(--motion); box-shadow:0 0 14px rgba(255,214,10,.35); }
 
-.rooms { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; }
-.room { border:1px solid var(--line); border-radius:11px; padding:8px 11px; }
-.room-h { display:flex; justify-content:space-between; align-items:baseline; gap:6px; }
-.room-n { font-size:13px; font-weight:600; display:inline-flex; align-items:center; gap:6px; }
-.dotc { width:6px; height:6px; border-radius:50%; display:inline-block; }
-.room .muted { font-size:11px; }
-.hot { color:var(--orange) !important; }
-.legend { display:flex; gap:14px; }
-.legend span { display:inline-flex; align-items:center; gap:6px; }
-.legend i { width:6px; height:6px; border-radius:50%; display:inline-block; }
+/* ===== Свет ===== */
+.light { grid-template-rows:minmax(0,1fr) auto; }
+.lgrps { display:flex; flex-direction:column; gap:22px; min-height:0; }
+.light .tile { min-height:142px; }
+.light .tile-i { width:48px; height:48px; border-radius:24px; }
 
-.track { position:relative; height:5px; border-radius:3px; background:var(--line); margin-top:8px; overflow:hidden; flex:none; }
-.track i { position:absolute; top:0; bottom:0; background:var(--blue); border-radius:3px; }
-
-.lgroups { flex:1; display:flex; flex-direction:column; justify-content:space-between; gap:6px; min-height:0; }
-.lg { display:grid; grid-template-columns:52px minmax(0,1fr); align-items:center; gap:8px; }
-.sub { color:var(--muted); font-size:11.5px; }
-.chips { display:grid; gap:7px; }
-.chips.n2 { grid-template-columns:repeat(2, minmax(0,1fr)); }
-.chips.n3 { grid-template-columns:repeat(3, minmax(0,1fr)); }
-.chips.n4 { grid-template-columns:repeat(4, minmax(0,1fr)); }
-.chip { display:flex; align-items:center; gap:8px; height:34px; padding:0 10px; border-radius:9px; border:1px solid var(--line); background:var(--card); font-size:13px; font-weight:500; text-align:left; min-width:0; transition:background .15s, border-color .15s; }
-.chip .lbl { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.chip:hover { border-color:var(--faint); }
-.chip.on { background:var(--blue-bg); border-color:transparent; color:var(--blue-text); }
-.chip.on .i { color:var(--blue); }
-.chip.na { opacity:.45; }
-.chip.on.t-heat { background:var(--heat-bg); color:var(--heat); }
-.chip.on.t-heat .i { color:var(--heat); }
-.chip.on.t-light { background:var(--light-bg); color:var(--light); }
-.chip.on.t-light .i { color:var(--light); }
-.pending { animation:pend 1s ease-in-out infinite; border-color:var(--blue) !important; }
-@keyframes pend { 50% { box-shadow:0 0 0 3px var(--blue-bg); opacity:.75; } }
-
-.loads { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:7px; margin-bottom:8px; }
-.load { border:1px solid var(--line); border-radius:10px; padding:6px 9px; min-width:0; }
-.load.on { border-color:var(--blue-bg); }
-.load-h { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; white-space:nowrap; }
-.load.on .load-h .i { color:var(--blue); }
-.load-v { font-size:17px; font-weight:300; margin:3px 0 0; white-space:nowrap; }
-.load .muted { font-size:10.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-
-/* отопление */
-.thead { display:grid; grid-template-columns:minmax(0,1fr) 62px 118px; gap:8px; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--faint); padding:0 2px 2px; }
-.thead span:nth-child(n+2) { text-align:center; }
-.trows { flex:1; display:flex; flex-direction:column; justify-content:space-around; min-height:0; }
-.trow { display:grid; grid-template-columns:minmax(0,1fr) 62px 118px; gap:8px; align-items:center; padding:2px; border-bottom:1px solid var(--line2); }
+/* ===== Климат ===== */
+.climate { grid-template-rows:auto auto auto auto minmax(0,1fr); }
+.modes { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px; padding:6px; border-radius:22px; background:var(--surface); border:1px solid var(--line); }
+.mode { display:flex; align-items:center; justify-content:center; gap:10px; height:60px; border-radius:16px; font-size:17px; font-weight:500; color:var(--muted); }
+.mode .i { color:inherit; }
+.mode.sel { background:var(--accent); color:#1a1712; }
+.mode.warm { color:var(--heat); }
+.a-rows { padding:6px 22px; }
+.trow { display:grid; grid-template-columns:minmax(0,1fr) 120px 230px; align-items:center; gap:14px; padding:14px 0; border-bottom:1px solid var(--line); }
 .trow:last-child { border-bottom:0; }
-.tname { display:inline-flex; align-items:center; gap:8px; font-weight:500; white-space:nowrap; }
-.tcur { font-size:17px; font-weight:300; text-align:center; }
-.tset { display:grid; grid-template-columns:32px 1fr 32px; align-items:center; gap:4px; }
-.tval { text-align:center; font-size:15px; font-weight:500; color:var(--blue-text); }
-.rb { width:32px; height:28px; border-radius:8px; border:1px solid var(--line); background:var(--card2); display:flex; align-items:center; justify-content:center; padding:0; }
-.rb .i { color:var(--text); }
-.rb:active { background:var(--blue-bg); }
-.seg.mini button.warm { color:var(--heat); }
-.seg.modes { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); margin-bottom:6px; flex:none; }
-.seg.modes button { justify-content:center; height:24px; }
-.seg.mini button.warm .i { color:var(--heat); }
+.tr-name { display:grid; grid-template-columns:auto 1fr; column-gap:10px; align-items:center; }
+.tr-name span { font-size:19px; font-weight:500; }
+.tr-name small { grid-column:2; font-size:14px; color:var(--muted); }
+.dot { width:9px; height:9px; border-radius:50%; display:inline-block; }
+.tr-cur { font-size:40px; font-weight:200; letter-spacing:-.02em; text-align:right; }
+.tr-set { display:grid; grid-template-columns:60px 1fr 60px; align-items:center; gap:8px; border-radius:18px; }
+.rb { width:60px; height:60px; border-radius:30px; background:var(--surface2); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; }
+.rb .i { color:var(--text); --mdc-icon-size:26px; width:26px; height:26px; }
+.tr-tgt { display:flex; flex-direction:column; align-items:center; font-size:24px; font-weight:500; color:var(--accent-text); }
+.tr-tgt small { font-size:12px; color:var(--muted); font-weight:400; }
+.info { padding:6px 22px; }
+.irow { display:flex; align-items:center; gap:14px; width:100%; padding:15px 0; border-bottom:1px solid var(--line); font-size:17px; }
+.irow:last-child { border-bottom:0; }
+.irow .i { color:var(--accent); }
+.irow b { margin-left:auto; font-weight:500; color:var(--muted); text-align:right; }
+.a-chart { display:flex; flex-direction:column; }
+.legend { margin-left:auto; display:flex; gap:16px; font-size:14px; font-weight:400; }
+.legend span { display:inline-flex; align-items:center; gap:6px; }
+.legend i { width:8px; height:8px; border-radius:50%; }
+.chart-wrap { position:relative; flex:1; min-height:60px; }
+.chart { position:absolute; inset:0; width:100%; height:100%; }
+.ax { position:absolute; left:0; font-size:12px; color:var(--faint); }
+.ax-t { top:0; } .ax-b { bottom:0; }
+.empty { display:flex; align-items:center; justify-content:center; color:var(--faint); font-size:14px; }
 
-/* панель ввода кода */
-.pad-bg { position:absolute; inset:0; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; z-index:5; }
-.pad { width:280px; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; box-shadow:0 12px 40px rgba(0,0,0,.4); }
-.pad-h { display:flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
+/* ===== Бассейн ===== */
+.pool { grid-template-rows:minmax(0,1fr) auto auto; }
+.pool-card { display:flex; flex-direction:column; }
+.pool-main { flex:1; min-height:0; display:flex; align-items:center; gap:24px; }
+.pool-t { font-size:96px; font-weight:200; letter-spacing:-.04em; line-height:1; white-space:nowrap; }
+.pool-t small { font-size:18px; color:var(--muted); margin-left:8px; letter-spacing:0; }
+.pool-main .spark { flex:1; height:120px; }
+.track { position:relative; height:8px; border-radius:4px; background:var(--surface2); margin-top:14px; overflow:hidden; }
+.track i { position:absolute; top:0; bottom:0; background:var(--accent); border-radius:4px; }
+.track-l { display:flex; justify-content:space-between; font-size:14px; color:var(--muted); margin-top:8px; }
+
+/* ===== Энергия ===== */
+.energy { grid-template-rows:minmax(0,1fr) auto auto auto; }
+.power { display:flex; flex-direction:column; cursor:pointer; }
+.pw-main { display:flex; align-items:baseline; gap:18px; }
+.pw-v { font-size:84px; font-weight:200; letter-spacing:-.04em; line-height:1; }
+.pw-v small { font-size:20px; color:var(--muted); margin-left:8px; letter-spacing:0; }
+.pw-s { font-size:16px; color:var(--muted); }
+.power .spark { flex:1; min-height:60px; width:100%; margin-top:12px; }
+.brks { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px; }
+.brk { display:flex; flex-direction:column; gap:6px; padding:16px 18px; border-radius:20px; background:var(--surface); border:1px solid var(--line); }
+.brk-h { display:flex; align-items:center; gap:8px; font-size:15px; color:var(--muted); font-weight:500; white-space:nowrap; }
+.brk-h .i { --mdc-icon-size:20px; width:20px; height:20px; }
+.led { width:8px; height:8px; border-radius:50%; background:var(--faint); margin-left:auto; }
+.brk.on .led { background:var(--green); box-shadow:0 0 8px var(--green); }
+.brk-v { font-size:28px; font-weight:300; white-space:nowrap; }
+.brk-s { font-size:13px; color:var(--muted); }
+
+/* ===== Камеры ===== */
+.cams { grid-template-rows:auto minmax(0,1fr); gap:0; }
+.cam-grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); grid-auto-rows:minmax(0,1fr); gap:14px; min-height:0; }
+
+/* панель вкладок */
+.tabs { flex:none; display:flex; gap:6px; margin:0 28px 22px; padding:8px; border-radius:30px; background:var(--surface); border:1px solid var(--line); }
+.tab { flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; padding:10px 0 8px; border-radius:22px; font-size:14px; font-weight:500; color:var(--muted); }
+.tab .i { --mdc-icon-size:26px; width:26px; height:26px; color:inherit; }
+.tab.sel { background:var(--accent-bg); color:var(--accent-text); }
+
+/* код охраны */
+.pad-bg { position:absolute; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; z-index:5; backdrop-filter:blur(4px); }
+.pad { width:380px; background:var(--surface); border:1px solid var(--line2); border-radius:28px; padding:22px; box-shadow:0 20px 60px rgba(0,0,0,.45); }
+.pad-h { display:flex; align-items:center; gap:10px; font-weight:500; font-size:19px; }
 .pad-h .i { color:var(--green); }
-.pad-x { margin-left:auto; border:0; background:none; padding:4px; display:flex; }
-.pad-code { height:44px; margin:12px 0; border:1px solid var(--line); border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:22px; letter-spacing:.3em; color:var(--text); }
-.pad-code.bad { color:var(--red); font-size:14px; letter-spacing:0; }
-.pad-keys { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
-.pk { height:48px; border-radius:10px; border:1px solid var(--line); background:var(--card2); font-size:20px; font-weight:500; display:flex; align-items:center; justify-content:center; }
-.pk .i { --mdc-icon-size:20px; width:20px; height:20px; color:var(--text); }
-.pk:active { background:var(--blue-bg); }
-.pk-ok { background:var(--green-bg); border-color:transparent; }
-.pk-ok .i { color:var(--green); }
+.pad-x { margin-left:auto; padding:6px; display:flex; }
+.pad-code { height:64px; margin:18px 0; border-radius:18px; background:var(--surface2); display:flex; align-items:center; justify-content:center; font-size:30px; letter-spacing:.35em; }
+.pad-code.bad { color:var(--red); font-size:17px; letter-spacing:0; }
+.pad-keys { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+.pk { height:72px; border-radius:20px; background:var(--surface2); border:1px solid var(--line); font-size:28px; font-weight:300; display:flex; align-items:center; justify-content:center; }
+.pk .i { --mdc-icon-size:28px; width:28px; height:28px; color:var(--text); }
+.pk:active { background:var(--accent-bg); }
+.pk-ok { background:var(--green-bg); border-color:transparent; } .pk-ok .i { color:var(--green); }
 
-.cams { flex:1; min-height:0; display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:8px; }
-.cam { display:flex; flex-direction:column; min-height:0; }
-.cam span { color:var(--muted); font-size:11.5px; margin-top:4px; }
-.shot { flex:1; min-height:0; border:1px solid var(--line); border-radius:8px; background:var(--card2); overflow:hidden; }
-.shot img { width:100%; height:100%; object-fit:cover; display:block; }
-.shot.motion { border:1.5px solid #ffd60a; box-shadow:0 0 6px rgba(255,214,10,.45); }
-.cam:has(.motion) span { color:#ffd60a; }
+/* ===== горизонтально: две колонки ===== */
+.landscape .home { grid-template-columns:repeat(12, minmax(0,1fr)); grid-template-rows:auto auto minmax(0,1fr);
+  grid-template-areas:"sec sec sec sec sec sec sec rooms rooms rooms rooms rooms" "quick quick quick quick quick quick quick stats stats stats stats stats" "cams cams cams cams cams cams cams stats stats stats stats stats"; }
+.landscape .rooms { grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px; }
+.landscape .room-t { font-size:42px; }
+.landscape .stats { grid-template-columns:repeat(2, minmax(0,1fr)); align-content:start; }
+.landscape .sec-btns { width:280px; }
+.landscape .lgrps { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:16px; align-content:start; }
+.landscape .light .tiles { grid-template-columns:repeat(2, minmax(0,1fr)); }
+.landscape .light .tile { min-height:104px; }
+.landscape .climate { grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); grid-template-rows:auto auto minmax(0,1fr);
+  grid-template-areas:"modes modes" "rows heaters" "chart info"; }
+.landscape .a-modes { grid-area:modes; } .landscape .a-rows { grid-area:rows; } .landscape .a-heaters { grid-area:heaters; }
+.landscape .a-chart { grid-area:chart; } .landscape .a-info { grid-area:info; overflow:auto; }
+.landscape .a-heaters .tiles { grid-template-columns:repeat(2, minmax(0,1fr)); }
+.landscape .a-heaters .tile { min-height:92px; }
+.landscape .trow { padding:10px 0; }
+.landscape .energy { grid-template-columns:minmax(0,1fr) minmax(0,1fr); grid-template-rows:minmax(0,1fr) auto auto;
+  grid-template-areas:"power sys" "brk brk" "loads loads"; }
+.landscape .a-power { grid-area:power; } .landscape .a-sys { grid-area:sys; } .landscape .a-brk { grid-area:brk; } .landscape .a-loads { grid-area:loads; }
+.landscape .a-loads .tiles { grid-template-columns:repeat(6, minmax(0,1fr)); }
+.landscape .pool { grid-template-columns:minmax(0,1fr) minmax(0,1fr); grid-template-rows:minmax(0,1fr) auto; grid-template-areas:"pool water" "ptiles water"; }
+.landscape .a-pool { grid-area:pool; } .landscape .a-ptiles { grid-area:ptiles; } .landscape .a-water { grid-area:water; }
+.landscape .a-water .tiles { grid-template-columns:repeat(2, minmax(0,1fr)); }
+.landscape .cam-grid { grid-template-columns:repeat(3, minmax(0,1fr)); }
+.landscape .tabs { margin:0 28px 16px; }
+.landscape .time { font-size:48px; }
 
-/* вертикальный планшет */
-.portrait .grid {
-  grid-template-columns:repeat(6, minmax(0,1fr));
-  grid-template-rows:minmax(0,142fr) minmax(0,124fr) minmax(0,194fr) minmax(0,152fr) minmax(0,200fr) minmax(0,162fr) minmax(0,136fr) minmax(0,110fr);
-  grid-template-areas:
-    "sec sec sec pow pow pow"
-    "tmp tmp tmp sns sns sns"
-    "clm clm clm clm clm clm"
-    "lgt lgt lgt lgt lgt lgt"
-    "heat heat heat sid sid sid"
-    "lod lod lod lod lod lod"
-    "cam cam cam cam cam cam"
-    "sys sys sys sys sys sys"; }
-.portrait .a-load .chips.n3 { grid-template-columns:repeat(6, minmax(0,1fr)); }
-.portrait .sys { display:grid; grid-template-columns:1fr 1fr; column-gap:28px; align-content:space-between; }
-.portrait .sys .row:nth-last-child(2) { border-bottom:0; }
-.portrait .top { row-gap:8px; }
-
-/* телефон: обычная прокрутка в одну колонку */
-.root.mobile { grid-template-columns:minmax(0,1fr); }
-.mobile .main { padding:12px; }
-.mobile .grid { display:flex; flex-direction:column; }
-.mobile .card { overflow:visible; }
-.mobile .chart { height:110px; flex:none; }
-.mobile .spark { height:46px; }
-.mobile .rooms { grid-template-columns:1fr 1fr 1fr; }
-.mobile .loads { grid-template-columns:repeat(2, minmax(0,1fr)); }
-.mobile .cams { grid-template-columns:repeat(3, minmax(0,1fr)); }
-.mobile .shot { aspect-ratio:16/10; flex:none; }
-.mobile .lg { grid-template-columns:1fr; gap:4px; }
+/* телефон: прокрутка в одну колонку */
+.mobile .hdr { flex-wrap:wrap; padding:14px 16px; }
+.mobile .main { padding:6px 16px 12px; }
+.mobile .home, .mobile .climate, .mobile .energy, .mobile .pool { display:flex; flex-direction:column; }
+.mobile .sec-card { flex-direction:column; align-items:stretch; }
+.mobile .sec-btns { width:auto; }
+.mobile .quick, .mobile .tiles.c4 { grid-template-columns:repeat(2, minmax(0,1fr)); }
+.mobile .stats { grid-template-columns:repeat(2, minmax(0,1fr)); }
+.mobile .cm-row, .mobile .cam-grid { grid-template-columns:1fr; grid-auto-rows:200px; }
+.mobile .cams-mini { min-height:260px; }
+.mobile .trow { grid-template-columns:1fr auto; }
+.mobile .tr-set { grid-column:1 / -1; }
+.mobile .brks { grid-template-columns:repeat(2, minmax(0,1fr)); }
+.mobile .tabs { position:sticky; bottom:8px; margin:0 12px 8px; overflow-x:auto; }
+.mobile .chart-wrap { height:160px; }
 `;
 
 if (!customElements.get("dacha-pro-card")) customElements.define("dacha-pro-card", DachaProCard);
 window.customCards = window.customCards || [];
 if (!window.customCards.find((c) => c.type === "dacha-pro-card")) {
-  window.customCards.push({ type: "dacha-pro-card", name: "Дача PRO", description: "Дашборд дачи одной карточкой" });
+  window.customCards.push({ type: "dacha-pro-card", name: "Дача PRO", description: "Дашборд дачи для настенного планшета" });
 }
