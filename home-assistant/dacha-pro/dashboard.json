@@ -1,0 +1,14 @@
+{
+  "views": [
+    {
+      "title": "Обзор",
+      "path": "obzor",
+      "icon": "mdi:view-dashboard-outline",
+      "type": "panel",
+      "cards": [
+        { "type": "custom:dacha-pro-card", "title": "Дача", "cameras_path": "/dacha-pro/kamery" }
+      ]
+    }
+  ],
+  "_note": "Вид «Камеры» (path: kamery, custom:advanced-camera-card) оставлен без изменений."
+}
