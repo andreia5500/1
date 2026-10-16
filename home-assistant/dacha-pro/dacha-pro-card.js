@@ -1,4 +1,4 @@
-/* Дача PRO — дашборд одной карточкой (custom:dacha-pro-card). v2.1.0 */
+/* Дача PRO — дашборд одной карточкой (custom:dacha-pro-card). v2.4.0 */
 const E = {
   alarm: "alarm_control_panel.alarmo",
   power: "sensor.summa_moshchnostei",
@@ -24,10 +24,11 @@ const E = {
   ups: "sensor.myups_battery_charge",
   upsVolt: "sensor.myups_input_voltage",
   upsStatus: "sensor.myups_status_data",
-  fps: "sensor.frigate_detection_fps",
   heatEta: "sensor.otoplenie_vremia_do_progreva",
   heatZonePower: "sensor.otoplenie_moshchnost_zhiloi_zony",
   heatDuty: "automation.otoplenie_dezhurnyi_rezhim_stupeni",
+  frostThr: "input_number.porog_zamorozki",
+  warmUp: "automation.nagrev_doma",
   season: "input_boolean.bassein_sezon_otkryt",
   poolTemp: "sensor.0xa4c1380cdb14ffff_temperature",
   poolFilter: "switch.0xa4c138d89acf4e98",
@@ -96,9 +97,9 @@ const WEATHER_ICON = {
 };
 
 // Базовый размер, под который свёрстана сетка; на экране она масштабируется целиком
-const BASE_W = 1180, BASE_H = 760, MOBILE_W = 600;
+const BASE_W = 1120, BASE_H = 760, MOBILE_W = 600;
 // Вертикальный планшет: своя сетка в 6 колонок
-const BASE_PW = 780, BASE_PH = 1380;
+const BASE_PW = 720, BASE_PH = 1380;
 
 const BAD = ["unknown", "unavailable", "", undefined, null];
 const nf = (v, d = 1) => Number(v).toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -116,7 +117,7 @@ class DachaProCard extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._hist = {};
-    this._nav = "overview";
+    this._pending = new Map();
     this._theme = null;
     this._fit = { mobile: false, style: "" };
     try { this._theme = localStorage.getItem("dacha-pro-theme"); } catch (e) { /* storage недоступен */ }
@@ -339,7 +340,24 @@ class DachaProCard extends HTMLElement {
     const st = this.s(id);
     const active = opts.active ?? (["on", "open", "opening", "cleaning", "heat"].includes(st));
     const off = BAD.includes(st);
-    return `<button class="chip ${active ? "on" : ""} ${off ? "na" : ""}" data-act="${opts.act || "toggle"}" data-id="${id}" title="${esc(name)}">${ic(icon)}<span class="lbl">${esc(name)}</span></button>`;
+    const cls = ["chip", active ? "on" : "", off ? "na" : "", opts.tone ? `t-${opts.tone}` : "", this.isPending(id) ? "pending" : ""].join(" ");
+    return `<button class="${cls}" data-act="${opts.act || "toggle"}" data-id="${id}" title="${esc(name)}">${ic(icon)}<span class="lbl">${esc(name)}</span></button>`;
+  }
+
+  /* Нажатая кнопка мигает, пока устройство не ответит сменой состояния (не дольше 10 с) */
+  markPending(id) {
+    if (!id) return;
+    this._pending.set(id, { state: this.s(id), t: Date.now() });
+    clearTimeout(this._pendTimer);
+    this._pendTimer = setTimeout(() => { this._pending.clear(); this._render(true); }, 10000);
+    this._render(true);
+  }
+
+  isPending(id) {
+    const p = this._pending.get(id);
+    if (!p) return false;
+    if (this.s(id) !== p.state || Date.now() - p.t > 10000) { this._pending.delete(id); return false; }
+    return true;
   }
 
   head(icon, title, meta = "") {
@@ -439,7 +457,7 @@ class DachaProCard extends HTMLElement {
       <div class="cf"><span>окна фильтрации за сутки</span><span>${fw.total ? dur(fw.total) : "0 мин"}</span></div>
       <div class="chips n3 grow-end">
         ${this.chip("Фильтр", E.poolFilter, "mdi:air-filter")}
-        ${this.chip("Нагрев", E.poolHeat, "mdi:fire")}
+        ${this.chip("Нагрев", E.poolHeat, "mdi:fire", { tone: "heat" })}
         ${this.chip("Умный", E.poolSmart, "mdi:robot-outline")}
       </div>
     </div>`;
@@ -462,9 +480,8 @@ class DachaProCard extends HTMLElement {
       </div>`;
     }).join("");
     return `<div class="card a-heat" id="sec-pool">
-      <div class="ch"><span class="ct">${ic("mdi:radiator")}<span class="eyebrow">Отопление</span></span>
-        <span class="seg mini">${PRESETS.map(([k, t, i]) => `<button class="${preset === k ? "sel" : ""}" data-act="preset" data-id="${k}" title="${t}">${ic(i)}<span>${t}</span></button>`).join("")}</span>
-      </div>
+      <div class="ch"><span class="ct">${ic("mdi:radiator")}<span class="eyebrow">Отопление</span></span><span class="meta">режим</span></div>
+        <div class="seg mini modes">${PRESETS.map(([k, t, i]) => `<button class="${preset === k ? "sel" : ""}" data-act="preset" data-id="${k}" title="${t}">${ic(i)}<span>${t}</span></button>`).join("")}<button class="warm ${this.isPending(E.warmUp) ? "pending" : ""}" data-act="warmup" title="Все обогреватели и бойлер — к приезду">${ic("mdi:fire")}<span>Прогрев</span></button></div>
       <div class="thead"><span>помещение</span><span>сейчас</span><span>цель</span></div>
       <div class="trows">${rows}</div>
     </div>`;
@@ -487,12 +504,18 @@ class DachaProCard extends HTMLElement {
   heatersCard() {
     const eta = this.n(E.heatEta);
     const zp = this.n(E.heatZonePower);
+    // Автоматизация держит дом выше порога, пока цель комнаты не выше порога (режим «Дежурный»)
+    const thr = this.n(E.frostThr);
+    const tgt = this.a(CLIMATE[0].climate, "temperature");
+    const frost = !this.on(E.heatDuty) ? { text: "выключена", cls: "warn" }
+      : thr !== null && tgt != null && tgt <= thr ? { text: `следит · порог ${sgn(thr, 0)}°`, cls: "" }
+      : { text: "ждёт «Дежурного»", cls: "" };
     return `<div class="card a-side" id="sec-water">
       ${this.head("mdi:snowflake-thermometer", "Обогреватели", zp ? `${nf(zp, 1)} кВт` : "")}
-      <div class="chips n2">${HEATERS.map(([n, id]) => this.chip(n, id, "mdi:radiator")).join("")}</div>
+      <div class="chips n2">${HEATERS.map(([n, id]) => this.chip(n, id, "mdi:radiator", { tone: "heat" })).join("")}</div>
       <div class="list grow-end">
         <div class="row tap" data-act="more" data-id="${E.heatEta}"><span>${ic("mdi:home-thermometer-outline")}До прогрева</span><span class="val">${eta ? "~" + dur(eta * 60) : "—"}</span></div>
-        <div class="row tap" data-act="toggle" data-id="${E.heatDuty}"><span>${ic("mdi:robot-outline")}Дежурный режим</span><span class="val">${this.on(E.heatDuty) ? "включён" : "выключен"}</span></div>
+        <div class="row tap" data-act="toggle" data-id="${E.heatDuty}"><span>${ic("mdi:snowflake-alert")}Антизаморозка</span><span class="val ${frost.cls}">${frost.text}</span></div>
       </div>
     </div>`;
   }
@@ -505,7 +528,7 @@ class DachaProCard extends HTMLElement {
     const theme = this._theme || "dark";
     const status = this.status();
     const out = this.outside();
-    const ups = this.n(E.ups), upsV = this.n(E.upsVolt), fps = this.n(E.fps);
+    const ups = this.n(E.ups), upsV = this.n(E.upsVolt);
     const upsOk = String(this.s(E.upsStatus) || "OL").startsWith("OL");
     const temp = (x) => this.tmp(x);
     const v = (x, d = 1, suf = "") => (x === null ? "—" : nf(x, d) + suf);
@@ -576,21 +599,9 @@ class DachaProCard extends HTMLElement {
     const heatP = this.n(E.heatPower), mainP = this.n(E.mainPower);
     const W = (x) => (x === null ? "—" : `${Math.round(x).toLocaleString("ru-RU")} Вт`);
 
-    const NAV = [
-      ["overview", "Обзор", "mdi:view-dashboard-outline"], ["light", "Свет", "mdi:lightbulb-outline"],
-      ["climate", "Климат", "mdi:thermometer"],
-      summer ? ["pool", "Бассейн", "mdi:pool"] : ["pool", "Отопл.", "mdi:radiator"],
-      summer ? ["water", "Полив", "mdi:sprinkler-variant"] : ["water", "Обогрев", "mdi:snowflake-thermometer"],
-      ["cams", "Камеры", "mdi:cctv"], ["energy", "Энергия", "mdi:lightning-bolt-outline"], ["system", "Система", "mdi:server-outline"],
-    ];
 
     return `
 <div class="root theme-${theme} ${this._fit.mobile ? "mobile" : "fit"} ${this._fit.portrait ? "portrait" : ""}" style="${this._fit.style}">
-  <aside class="rail">
-    <div class="logo" title="${esc(this._config.title || "Дача")}">${esc((this._config.title || "Дача").slice(0, 1))}</div>
-    <nav>${NAV.map(([k, t, i]) => `<button class="nav ${this._nav === k ? "active" : ""}" data-act="nav" data-id="${k}">${ic(i)}<span>${t}</span></button>`).join("")}</nav>
-    <div class="upd">${hm(this._histAt || now)}</div>
-  </aside>
 
   <main class="main">
     <header class="top">
@@ -605,7 +616,6 @@ class DachaProCard extends HTMLElement {
         </span>
         <span class="pill tap" data-act="more" data-id="${wEnt}">${ic(WEATHER_ICON[out.cond] || "mdi:weather-partly-cloudy")}${temp(out.t)}</span>
         <span class="pill tap ${upsOk ? "" : "warn"}" data-act="more" data-id="${E.ups}">${ic("mdi:battery-charging-high")}ИБП ${ups === null ? "—" : Math.round(ups) + "%"}${upsV !== null ? ` · ${Math.round(upsV)} В` : ""}</span>
-        <span class="pill tap" data-act="more" data-id="${E.fps}">${ic("mdi:cctv")}${v(fps, 1)} fps</span>
         <button class="pill icon" data-act="theme" title="Тема">${ic(theme === "dark" ? "mdi:weather-sunny" : "mdi:weather-night")}</button>
       </div>
     </header>
@@ -613,11 +623,11 @@ class DachaProCard extends HTMLElement {
     <section class="grid">
       <div class="card a-sec" id="sec-security">
         ${this.head(armed ? "mdi:shield-lock-outline" : "mdi:shield-off-outline", "Охрана", `${dc.total} зон`)}
-        <div class="h2 ${al === "triggered" ? "bad" : ""}">${alText}</div>
+        <div class="h2 ${al === "triggered" || armed ? "bad" : al === "disarmed" ? "ok" : ""}">${alText}</div>
         <div class="muted ${dc.open ? "warn" : ""}">${dc.open ? `открыто дверей: ${dc.open}` : "все двери закрыты"}</div>
         <div class="btns grow-end">
-          <button class="btn ${armed ? "primary" : ""}" data-act="disarm">${ic("mdi:home-outline")}Я дома</button>
-          <button class="btn ${armed ? "" : "primary"}" data-act="arm">${ic("mdi:home-export-outline")}Ухожу</button>
+          <button class="btn ${!armed && al === "disarmed" ? "ok-on" : ""} ${this.isPending(E.alarm) ? "pending" : ""}" data-act="disarm">${ic("mdi:shield-off-outline")}Снято с охраны</button>
+          <button class="btn ${armed ? "bad-on" : ""} ${this.isPending(E.alarm) ? "pending" : ""}" data-act="arm">${ic("mdi:shield-lock-outline")}На охране</button>
         </div>
       </div>
 
@@ -663,7 +673,7 @@ class DachaProCard extends HTMLElement {
       <div class="card a-light" id="sec-light">
         ${this.head("mdi:lightbulb-group-outline", "Свет", `включено ${lightsOn} из ${lightIds.length}`)}
         <div class="lgroups">
-          ${LIGHTS.map((g) => `<div class="lg"><span class="sub">${g.group}</span><div class="chips n4">${g.items.map(([n, id, i]) => this.chip(n, id, i)).join("")}</div></div>`).join("")}
+          ${LIGHTS.map((g) => `<div class="lg"><span class="sub">${g.group}</span><div class="chips n4">${g.items.map(([n, id, i]) => this.chip(n, id, i, { tone: "light" })).join("")}</div></div>`).join("")}
         </div>
       </div>
 
@@ -677,7 +687,7 @@ class DachaProCard extends HTMLElement {
           ${loadTile("Плита 380", "mdi:stove", plitaOn ? "Вкл" : "Выкл", "резерв нагрева", E.plita, plitaOn)}
           ${loadTile("Септик", "mdi:pipe-valve", septP === null ? (septOn ? "Вкл" : "Выкл") : W(septP), septOn ? "обогрев" : "простой", E.septik, septOn)}
         </div>
-        <div class="chips n3 grow-end">${LOADS.map(([n, id, i]) => this.chip(n, id, i, { act: id.startsWith("vacuum.") ? "more" : "toggle" })).join("")}</div>
+        <div class="chips n3 grow-end">${LOADS.map(([n, id, i]) => this.chip(n, id, i, { act: id.startsWith("vacuum.") ? "more" : "toggle", tone: /heating-coil|water-boiler/.test(i) ? "heat" : "" })).join("")}</div>
       </div>
 
       ${summer ? this.wateringCard() : this.heatersCard()}
@@ -687,7 +697,10 @@ class DachaProCard extends HTMLElement {
         <div class="cams">${CAMERAS.map(([n, id]) => {
           const pic = this.a(id, "entity_picture");
           const src = pic ? this._hass.hassUrl(pic) : "";
-          return `<div class="cam tap" data-act="more" data-id="${id}"><div class="shot">${src ? `<img src="${esc(src)}" loading="lazy" alt="">` : ""}</div><span>${n}</span></div>`;
+          // Движение по данным Frigate: binary_sensor.<камера>_motion
+          const key = id.split(".")[1];
+          const moving = this.on(`binary_sensor.${key}_motion`) || this.on(`binary_sensor.${key}_all_occupancy`);
+          return `<div class="cam tap" data-act="more" data-id="${id}"><div class="shot ${moving ? "motion" : ""}">${src ? `<img src="${esc(src)}" loading="lazy" alt="">` : ""}</div><span>${n}</span></div>`;
         }).join("")}</div>
       </div>
 
@@ -702,6 +715,7 @@ class DachaProCard extends HTMLElement {
       </div>
     </section>
   </main>
+  ${this.padHtml()}
 </div>`;
   }
 
@@ -729,6 +743,30 @@ class DachaProCard extends HTMLElement {
     this.dispatchEvent(ev);
   }
 
+  async _disarmWithCode() {
+    const code = this._pad.code;
+    if (!code) return;
+    try {
+      await this._hass.callService("alarm_control_panel", "alarm_disarm", { entity_id: E.alarm, code });
+      this._pad = null;
+      this.markPending(E.alarm);
+    } catch (e) {
+      this._pad = { code: "", err: "Неверный код" };
+      this._render(true);
+    }
+  }
+
+  padHtml() {
+    if (!this._pad) return "";
+    const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "back", "0", "ok"];
+    const label = { back: ic("mdi:backspace-outline"), ok: ic("mdi:check") };
+    return `<div class="pad-bg" data-act="pad" data-id="close"><div class="pad" data-act="noop">
+      <div class="pad-h">${ic("mdi:shield-off-outline")}<span>Снять с охраны</span><button class="pad-x" data-act="pad" data-id="close">${ic("mdi:close")}</button></div>
+      <div class="pad-code ${this._pad.err ? "bad" : ""}">${this._pad.err || (this._pad.code ? "•".repeat(this._pad.code.length) : "введите код")}</div>
+      <div class="pad-keys">${keys.map((k) => `<button class="pk ${k === "ok" ? "pk-ok" : ""}" data-act="pad" data-id="${k}">${label[k] || k}</button>`).join("")}</div>
+    </div></div>`;
+  }
+
   _setTemp(id, dir) {
     const o = this.st(id);
     if (!o) return;
@@ -736,19 +774,28 @@ class DachaProCard extends HTMLElement {
     const cur = o.attributes.temperature ?? o.attributes.current_temperature ?? 20;
     const min = o.attributes.min_temp ?? 5, max = o.attributes.max_temp ?? 30;
     const next = Math.min(max, Math.max(min, Math.round((cur + dir * step) / step) * step));
+    this.markPending(id);
     this._call("climate", "set_temperature", { entity_id: id, temperature: next });
   }
 
   _action(act, id) {
     switch (act) {
+      case "noop": return;
       case "more": return this._more(id);
       case "toggle": {
         const st = this.s(id);
         if (BAD.includes(st)) return this._more(id);
+        this.markPending(id);
         const dom = id.split(".")[0];
         if (dom === "cover") return this._call("cover", "toggle", { entity_id: id });
         if (dom === "automation") return this._call("automation", st === "on" ? "turn_off" : "turn_on", { entity_id: id });
         return this._call("homeassistant", "toggle", { entity_id: id });
+      }
+      case "warmup": {
+        // «Нагрев дома»: 23° комната/кухня, 15° тамбур, лестница и бойлер — все ступени сразу
+        this.markPending(E.warmUp);
+        HEATERS.forEach((h) => this.markPending(h[1]));
+        return this._call("automation", "trigger", { entity_id: E.warmUp, skip_condition: true });
       }
       case "tup": return this._setTemp(id, 1);
       case "tdown": return this._setTemp(id, -1);
@@ -760,34 +807,28 @@ class DachaProCard extends HTMLElement {
         }
         return;
       }
-      case "arm": return this._call("alarm_control_panel", "alarm_arm_away", { entity_id: E.alarm });
-      case "disarm": return this._call("alarm_control_panel", "alarm_disarm", { entity_id: E.alarm });
+      case "arm": if (String(this.s(E.alarm)).startsWith("armed")) return; this.markPending(E.alarm); return this._call("alarm_control_panel", "alarm_arm_away", { entity_id: E.alarm });
+      case "disarm": {
+        if (this.s(E.alarm) === "disarmed") return;
+        if (this.a(E.alarm, "code_format")) { this._pad = { code: "", err: "" }; return this._render(true); }
+        this.markPending(E.alarm);
+        return this._call("alarm_control_panel", "alarm_disarm", { entity_id: E.alarm });
+      }
+      case "pad": {
+        if (!this._pad) return;
+        if (id === "close") { this._pad = null; return this._render(true); }
+        if (id === "back") this._pad.code = this._pad.code.slice(0, -1);
+        else if (id === "ok") return this._disarmWithCode();
+        else if (this._pad.code.length < 8) this._pad.code += id;
+        this._pad.err = "";
+        return this._render(true);
+      }
       case "season": return this._call("input_boolean", id === "on" ? "turn_on" : "turn_off", { entity_id: E.season });
-      case "stopwater": return this._call("switch", "turn_off", { entity_id: WATERING.map((w) => w[1]) });
+      case "stopwater": WATERING.forEach((w) => this.markPending(w[1])); return this._call("switch", "turn_off", { entity_id: WATERING.map((w) => w[1]) });
       case "theme": {
         this._theme = (this._theme || "dark") === "dark" ? "light" : "dark";
         try { localStorage.setItem("dacha-pro-theme", this._theme); } catch (e) { /* storage недоступен */ }
         return this._render(true);
-      }
-      case "nav": {
-        this._nav = id;
-        if (id === "cams" && this._config.cameras_path) {
-          history.pushState(null, "", this._config.cameras_path);
-          window.dispatchEvent(new CustomEvent("location-changed"));
-          return;
-        }
-        const target = {
-          overview: null, light: "sec-light", climate: "sec-climate", pool: "sec-pool", water: "sec-water",
-          cams: "sec-cams", energy: "sec-loads", system: "sec-system",
-        }[id];
-        this._render(true);
-        const el = target && this.shadowRoot.getElementById(target);
-        if (el) {
-          if (this._fit.mobile) el.scrollIntoView({ behavior: "smooth", block: "center" });
-          el.classList.add("flash");
-          setTimeout(() => el.classList.remove("flash"), 1400);
-        }
-        return;
       }
     }
   }
@@ -796,21 +837,25 @@ class DachaProCard extends HTMLElement {
 const STYLES = `
 :host { display:block; }
 .root {
-  --bg:#121315; --rail:#16171a; --card:#18191c; --card2:#1d1e22; --line:#2a2b30; --line2:#232428;
+  --bg:#121315; --card:#18191c; --card2:#1d1e22; --line:#2a2b30; --line2:#232428;
   --text:#f3f3f5; --muted:#9b9ca3; --faint:#6d6e75; --blue:#8ab9ec; --blue-bg:#1f2c3d; --blue-text:#a4cbf3;
   --orange:#e6a24a; --grey:#a9aab0; --red:#ef6b63; --warn:#e6a24a; --grid:#25262a; --spark-fill:rgba(138,185,236,.14);
   --primary-btn:#8ab9ec; --primary-btn-text:#0f1a26; --icon:#8b8c93;
+  --green:#5fc48a; --green-bg:rgba(95,196,138,.18); --red-bg:rgba(239,107,99,.2);
+  --heat:#f08f86; --heat-bg:rgba(239,107,99,.16); --light:#f2cf6b; --light-bg:rgba(242,200,90,.15);
   font-family: Inter, -apple-system, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
   font-size:13px; color:var(--text); background:var(--bg);
-  display:grid; grid-template-columns:64px minmax(0,1fr); box-sizing:border-box;
+  display:grid; grid-template-columns:minmax(0,1fr); box-sizing:border-box;
   -webkit-font-smoothing:antialiased; font-feature-settings:"tnum" 1, "cv11" 1;
 }
 .root.theme-light {
-  --bg:#f2f2f0; --rail:#e9e8e5; --card:#ffffff; --card2:#f7f7f5; --line:#e1e0dc; --line2:#ecebe7;
+  --bg:#f2f2f0; --card:#ffffff; --card2:#f7f7f5; --line:#e1e0dc; --line2:#ecebe7;
   --text:#18191c; --muted:#6b6c72; --faint:#a3a4a9; --blue:#3b82c9; --blue-bg:#e2edf9; --blue-text:#245f9e;
   --orange:#d48a2a; --grey:#8d8e94; --grid:#ecebe7; --spark-fill:rgba(59,130,201,.12); --primary-btn:#3b82c9; --primary-btn-text:#fff; --icon:#85868c;
+  --green:#23935a; --green-bg:#dcf2e5; --red:#d64b42; --red-bg:#fbe1de; --heat:#c4473f; --heat-bg:#fbe4e1; --light:#a77a00; --light-bg:#fbf0cc;
 }
 .root.fit { overflow:hidden; }
+.root { position:relative; }
 .root.mobile { min-height:calc(100vh - var(--header-height, 56px)); }
 *, *::before, *::after { box-sizing:border-box; }
 button { font:inherit; color:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent; }
@@ -821,16 +866,6 @@ button { font:inherit; color:inherit; cursor:pointer; -webkit-tap-highlight-colo
 .muted { color:var(--muted); font-size:12px; }
 .warn { color:var(--warn); } .bad { color:var(--red); }
 
-/* rail */
-.rail { background:var(--rail); border-right:1px solid var(--line2); display:flex; flex-direction:column; align-items:center; padding:12px 6px 10px; gap:4px; min-height:0; }
-.logo { width:36px; height:36px; border-radius:11px; background:var(--blue-bg); color:var(--blue-text); display:flex; align-items:center; justify-content:center; font-weight:600; font-size:17px; margin-bottom:10px; }
-nav { display:flex; flex-direction:column; gap:3px; width:100%; }
-.nav { display:flex; flex-direction:column; align-items:center; gap:3px; border:0; background:none; border-radius:10px; padding:7px 2px 6px; font-size:10px; color:var(--muted); width:100%; }
-.nav .i { --mdc-icon-size:20px; width:20px; height:20px; }
-.nav:hover { background:var(--card2); }
-.nav.active { background:var(--blue-bg); color:var(--blue-text); font-weight:500; }
-.nav.active .i { color:var(--blue); }
-.upd { margin-top:auto; font-size:10px; color:var(--faint); }
 
 /* main */
 .main { padding:12px 14px 14px; min-width:0; min-height:0; display:flex; flex-direction:column; gap:10px; }
@@ -877,10 +912,14 @@ nav { display:flex; flex-direction:column; gap:3px; width:100%; }
 .big2 { font-size:22px; font-weight:300; letter-spacing:-.01em; margin:3px 0 1px; }
 .cf { display:flex; justify-content:space-between; gap:8px; align-items:center; margin-top:6px; font-size:11.5px; color:var(--muted); }
 
-.btns { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding-top:8px; }
-.btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; height:34px; border-radius:9px; border:1px solid var(--line); background:var(--card2); font-size:13px; font-weight:500; }
+.btns { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding-top:8px; flex:none; }
+.btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; height:34px; white-space:nowrap; min-width:0; padding:0 6px; border-radius:9px; border:1px solid var(--line); background:var(--card2); font-size:13px; font-weight:500; }
 .btn.primary { background:var(--primary-btn); color:var(--primary-btn-text); border-color:transparent; }
 .btn.primary .i { color:inherit; }
+.btn.ok-on { background:var(--green-bg); border-color:transparent; color:var(--green); }
+.btn.bad-on { background:var(--red-bg); border-color:transparent; color:var(--red); }
+.btn.ok-on .i, .btn.bad-on .i { color:inherit; }
+.h2.ok { color:var(--green); }
 
 .pow { display:flex; align-items:flex-end; gap:12px; flex:1; min-height:0; }
 .spark { flex:1; min-width:0; height:100%; max-height:46px; display:block; }
@@ -930,6 +969,12 @@ nav { display:flex; flex-direction:column; gap:3px; width:100%; }
 .chip.on { background:var(--blue-bg); border-color:transparent; color:var(--blue-text); }
 .chip.on .i { color:var(--blue); }
 .chip.na { opacity:.45; }
+.chip.on.t-heat { background:var(--heat-bg); color:var(--heat); }
+.chip.on.t-heat .i { color:var(--heat); }
+.chip.on.t-light { background:var(--light-bg); color:var(--light); }
+.chip.on.t-light .i { color:var(--light); }
+.pending { animation:pend 1s ease-in-out infinite; border-color:var(--blue) !important; }
+@keyframes pend { 50% { box-shadow:0 0 0 3px var(--blue-bg); opacity:.75; } }
 
 .loads { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:7px; margin-bottom:8px; }
 .load { border:1px solid var(--line); border-radius:10px; padding:6px 9px; min-width:0; }
@@ -940,29 +985,50 @@ nav { display:flex; flex-direction:column; gap:3px; width:100%; }
 .load .muted { font-size:10.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
 /* отопление */
-.thead { display:grid; grid-template-columns:minmax(0,1fr) 62px 118px; gap:8px; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--faint); padding:0 2px 4px; }
+.thead { display:grid; grid-template-columns:minmax(0,1fr) 62px 118px; gap:8px; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--faint); padding:0 2px 2px; }
 .thead span:nth-child(n+2) { text-align:center; }
 .trows { flex:1; display:flex; flex-direction:column; justify-content:space-around; min-height:0; }
-.trow { display:grid; grid-template-columns:minmax(0,1fr) 62px 118px; gap:8px; align-items:center; padding:4px 2px; border-bottom:1px solid var(--line2); }
+.trow { display:grid; grid-template-columns:minmax(0,1fr) 62px 118px; gap:8px; align-items:center; padding:2px; border-bottom:1px solid var(--line2); }
 .trow:last-child { border-bottom:0; }
 .tname { display:inline-flex; align-items:center; gap:8px; font-weight:500; white-space:nowrap; }
 .tcur { font-size:17px; font-weight:300; text-align:center; }
 .tset { display:grid; grid-template-columns:32px 1fr 32px; align-items:center; gap:4px; }
 .tval { text-align:center; font-size:15px; font-weight:500; color:var(--blue-text); }
-.rb { width:32px; height:30px; border-radius:8px; border:1px solid var(--line); background:var(--card2); display:flex; align-items:center; justify-content:center; padding:0; }
+.rb { width:32px; height:28px; border-radius:8px; border:1px solid var(--line); background:var(--card2); display:flex; align-items:center; justify-content:center; padding:0; }
 .rb .i { color:var(--text); }
 .rb:active { background:var(--blue-bg); }
+.seg.mini button.warm { color:var(--heat); }
+.seg.modes { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); margin-bottom:6px; flex:none; }
+.seg.modes button { justify-content:center; height:24px; }
+.seg.mini button.warm .i { color:var(--heat); }
+
+/* панель ввода кода */
+.pad-bg { position:absolute; inset:0; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; z-index:5; }
+.pad { width:280px; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; box-shadow:0 12px 40px rgba(0,0,0,.4); }
+.pad-h { display:flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
+.pad-h .i { color:var(--green); }
+.pad-x { margin-left:auto; border:0; background:none; padding:4px; display:flex; }
+.pad-code { height:44px; margin:12px 0; border:1px solid var(--line); border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:22px; letter-spacing:.3em; color:var(--text); }
+.pad-code.bad { color:var(--red); font-size:14px; letter-spacing:0; }
+.pad-keys { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.pk { height:48px; border-radius:10px; border:1px solid var(--line); background:var(--card2); font-size:20px; font-weight:500; display:flex; align-items:center; justify-content:center; }
+.pk .i { --mdc-icon-size:20px; width:20px; height:20px; color:var(--text); }
+.pk:active { background:var(--blue-bg); }
+.pk-ok { background:var(--green-bg); border-color:transparent; }
+.pk-ok .i { color:var(--green); }
 
 .cams { flex:1; min-height:0; display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:8px; }
 .cam { display:flex; flex-direction:column; min-height:0; }
 .cam span { color:var(--muted); font-size:11.5px; margin-top:4px; }
 .shot { flex:1; min-height:0; border:1px solid var(--line); border-radius:8px; background:var(--card2); overflow:hidden; }
 .shot img { width:100%; height:100%; object-fit:cover; display:block; }
+.shot.motion { border:1.5px solid #ffd60a; box-shadow:0 0 6px rgba(255,214,10,.45); }
+.cam:has(.motion) span { color:#ffd60a; }
 
 /* вертикальный планшет */
 .portrait .grid {
   grid-template-columns:repeat(6, minmax(0,1fr));
-  grid-template-rows:minmax(0,125fr) minmax(0,128fr) minmax(0,200fr) minmax(0,158fr) minmax(0,200fr) minmax(0,162fr) minmax(0,140fr) minmax(0,112fr);
+  grid-template-rows:minmax(0,142fr) minmax(0,124fr) minmax(0,194fr) minmax(0,152fr) minmax(0,200fr) minmax(0,162fr) minmax(0,136fr) minmax(0,110fr);
   grid-template-areas:
     "sec sec sec pow pow pow"
     "tmp tmp tmp sns sns sns"
@@ -978,12 +1044,7 @@ nav { display:flex; flex-direction:column; gap:3px; width:100%; }
 .portrait .top { row-gap:8px; }
 
 /* телефон: обычная прокрутка в одну колонку */
-.root.mobile { grid-template-columns:minmax(0,1fr); grid-template-rows:auto 1fr; }
-.mobile .rail { flex-direction:row; padding:8px; gap:6px; position:sticky; top:var(--header-height, 56px); z-index:2; overflow-x:auto; border-right:0; border-bottom:1px solid var(--line2); }
-.mobile .logo { margin:0; flex:none; }
-.mobile nav { flex-direction:row; width:auto; }
-.mobile .nav { width:58px; flex:none; }
-.mobile .upd { display:none; }
+.root.mobile { grid-template-columns:minmax(0,1fr); }
 .mobile .main { padding:12px; }
 .mobile .grid { display:flex; flex-direction:column; }
 .mobile .card { overflow:visible; }
