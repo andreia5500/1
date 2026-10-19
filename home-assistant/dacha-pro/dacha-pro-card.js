@@ -1,4 +1,4 @@
-/* Дача PRO — дашборд для настенного планшета (custom:dacha-pro-card). v3.0.0 */
+/* Дача PRO — дашборд для настенного планшета (custom:dacha-pro-card). v3.0.1 */
 const E = {
   alarm: "alarm_control_panel.alarmo",
   power: "sensor.summa_moshchnostei",
@@ -179,7 +179,8 @@ class DachaProCard extends HTMLElement {
     if (w < MOBILE_W || this._config.fit === false) {
       fit = { mobile: w < MOBILE_W, style: "" };
     } else {
-      const portrait = h / w > 1.1;
+      // раскладка, в которой экран используется лучше (крупнее масштаб)
+      const portrait = Math.min(w / BASE_PW, h / BASE_PH) > Math.min(w / BASE_W, h / BASE_H);
       const bw = portrait ? BASE_PW : BASE_W, bh = portrait ? BASE_PH : BASE_H;
       const s = Math.max(0.5, Math.min(w / bw, h / bh, this._config.max_scale || 1.6));
       const useZoom = CSS.supports("zoom", "1");
@@ -483,7 +484,7 @@ class DachaProCard extends HTMLElement {
       `<button class="stat ${lvl}" data-act="${act}" data-id="${id}">${ic(icon)}<span class="stat-l">${label}</span><span class="stat-v">${value}</span></button>`;
 
     // сначала камеры с движением
-    const cams = [...CAMERAS].sort((x, y) => Number(this.motion(y[1])) - Number(this.motion(x[1]))).slice(0, 3);
+    const cams = [...CAMERAS].sort((x, y) => Number(this.motion(y[1])) - Number(this.motion(x[1])));
 
     return `<div class="page home">
       <div class="card sec-card ${armed ? "armed" : al === "disarmed" ? "disarmed" : ""} a-sec">
@@ -950,7 +951,14 @@ button { font:inherit; color:inherit; cursor:pointer; border:0; background:none;
 .stat.bad { background:var(--red-bg); border-color:transparent; } .stat.bad .i, .stat.bad .stat-v { color:var(--red); }
 
 .cams-mini { display:flex; flex-direction:column; padding:18px; }
-.cm-row { flex:1; min-height:0; display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px; }
+.cm-row { flex:1; min-height:0; display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); grid-template-rows:repeat(2, minmax(0,1fr)); gap:12px; }
+.cm-row .shot:nth-child(n+5) { display:none; }
+/* узкий высокий блок камер: 2×3 вместо вытянутых 2×2 */
+.fit .cams-mini { container-type:size; }
+@container (max-aspect-ratio: 1/1) {
+  .cm-row { grid-template-rows:repeat(3, minmax(0,1fr)); }
+  .cm-row .shot:nth-child(n+5) { display:block; }
+}
 .shot { position:relative; border-radius:16px; overflow:hidden; background:var(--surface2); border:2px solid transparent; min-height:0; }
 .shot img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
 .shot-n { position:absolute; left:10px; bottom:10px; display:inline-flex; align-items:center; gap:6px; padding:5px 11px; border-radius:12px; background:rgba(0,0,0,.55); color:#fff; font-size:14px; font-weight:500; backdrop-filter:blur(6px); }
@@ -1052,10 +1060,10 @@ button { font:inherit; color:inherit; cursor:pointer; border:0; background:none;
 
 /* ===== горизонтально: две колонки ===== */
 .landscape .home { grid-template-columns:repeat(12, minmax(0,1fr)); grid-template-rows:auto auto minmax(0,1fr);
-  grid-template-areas:"sec sec sec sec sec sec sec rooms rooms rooms rooms rooms" "quick quick quick quick quick quick quick stats stats stats stats stats" "cams cams cams cams cams cams cams stats stats stats stats stats"; }
+  grid-template-areas:"sec sec sec sec sec sec sec rooms rooms rooms rooms rooms" "quick quick quick quick quick quick quick cams cams cams cams cams" "stats stats stats stats stats stats stats cams cams cams cams cams"; }
 .landscape .rooms { grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px; }
 .landscape .room-t { font-size:42px; }
-.landscape .stats { grid-template-columns:repeat(2, minmax(0,1fr)); align-content:start; }
+.landscape .stats { grid-template-columns:repeat(3, minmax(0,1fr)); align-content:start; }
 .landscape .sec-btns { width:280px; }
 .landscape .lgrps { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:16px; align-content:start; }
 .landscape .light .tiles { grid-template-columns:repeat(2, minmax(0,1fr)); }
@@ -1086,8 +1094,11 @@ button { font:inherit; color:inherit; cursor:pointer; border:0; background:none;
 .mobile .sec-btns { width:auto; }
 .mobile .quick, .mobile .tiles.c4 { grid-template-columns:repeat(2, minmax(0,1fr)); }
 .mobile .stats { grid-template-columns:repeat(2, minmax(0,1fr)); }
-.mobile .cm-row, .mobile .cam-grid { grid-template-columns:1fr; grid-auto-rows:200px; }
-.mobile .cams-mini { min-height:260px; }
+.mobile .cm-row, .mobile .cam-grid { grid-template-columns:1fr; grid-template-rows:none; grid-auto-rows:200px; }
+.mobile .cams-mini { min-height:260px; container-type:normal; }
+.mobile .cm-row .shot:nth-child(n+4) { display:none; }
+.mobile .room-t { font-size:30px; }
+.mobile .room { padding:14px; }
 .mobile .trow { grid-template-columns:1fr auto; }
 .mobile .tr-set { grid-column:1 / -1; }
 .mobile .brks { grid-template-columns:repeat(2, minmax(0,1fr)); }
