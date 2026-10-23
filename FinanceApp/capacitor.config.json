@@ -1,0 +1,6 @@
+{
+  "appId": "ru.andreia.finance",
+  "appName": "Мои финансы",
+  "webDir": "dist",
+  "android": { "allowMixedContent": false, "captureInput": true }
+}

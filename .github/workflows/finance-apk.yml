@@ -1,0 +1,72 @@
+name: Мои финансы — сборка APK
+
+on:
+  push:
+    paths:
+      - 'FinanceApp/**'
+      - '.github/workflows/finance-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: FinanceApp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: FinanceApp/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Зависимости
+        run: npm ci
+
+      - name: Тесты
+        run: npm test
+
+      - name: Сборка веб-части
+        run: npm run build
+
+      - name: Перенос в Android-проект
+        run: npx cap sync android
+
+      - name: Сборка APK
+        working-directory: FinanceApp/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Имя файла
+        run: cp android/app/build/outputs/apk/release/app-release.apk MoiFinansy.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MoiFinansy-0.1.${{ github.run_number }}
+          path: FinanceApp/MoiFinansy.apk
+
+      - name: Публикация в Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: finance-v0.1.${{ github.run_number }}
+          name: Мои финансы 0.1.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          files: FinanceApp/MoiFinansy.apk
+          body: |
+            Приложение «Мои финансы» для Android.
+            Скачайте MoiFinansy.apk на телефон и установите (разрешите установку из этого источника).
+            Новые версии ставятся поверх старой, данные сохраняются.

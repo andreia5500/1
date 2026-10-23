@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Мои финансы</string>
+    <string name="title_activity_main">Мои финансы</string>
+    <string name="package_name">ru.andreia.finance</string>
+    <string name="share_label">Добавить в «Мои финансы»</string>
+    <string name="custom_url_scheme">ru.andreia.finance</string>
+</resources>
