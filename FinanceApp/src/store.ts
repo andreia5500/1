@@ -18,7 +18,7 @@ export async function loadData(): Promise<AppData> {
   const d = (await get(KEY)) as AppData | undefined;
   if (!d) return emptyData();
   const e = emptyData();
-  return { ...e, ...d, settings: { ...e.settings, ...d.settings } };
+  return { ...e, ...d, settings: { ...e.settings, ...d.settings, safetyBuffer: d.settings?.safetyBuffer ?? e.settings.safetyBuffer } };
 }
 
 export async function saveData(d: AppData) { await set(KEY, d); }
@@ -58,10 +58,23 @@ export interface Store {
   importPdfs: (files: { name: string; bytes: Uint8Array }[]) => Promise<void>;
   go: (tab: Tab, filter?: TxFilter) => void;
   toast: (msg: string) => void;
+  /** открыть быстрый ввод расхода/дохода */
+  openAdd: (preset?: AddPreset) => void;
+  today: string;
 }
 
-export type Tab = 'overview' | 'ops' | 'plan' | 'debts' | 'accounts';
-export interface TxFilter { kind?: 'expense' | 'income' | 'transfer' | 'review'; category?: string; month?: string }
+export interface AddPreset {
+  kind?: 'expense' | 'income';
+  amount?: number;
+  category?: string;
+  note?: string;
+  date?: string;
+  plannedRef?: string;
+  editId?: string;   // редактирование уже внесённой вручную операции
+}
+
+export type Tab = 'overview' | 'ops' | 'payments' | 'budget' | 'accounts';
+export interface TxFilter { kind?: 'expense' | 'income' | 'transfer' | 'review' | 'manual'; category?: string; month?: string }
 
 export const StoreCtx = createContext<Store>(null as any);
 export const useStore = () => useContext(StoreCtx);

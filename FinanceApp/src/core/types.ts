@@ -49,9 +49,19 @@ export interface RawTx {
   description: string;
   card?: string;
   authCode?: string;
+  /** операция, внесённая вручную кнопкой «+» */
+  manual?: boolean;
+  /** для ручной операции: категория, которую выбрал пользователь */
+  manualCategory?: string;
+  /** ручная операция = отметка «оплачено» для постоянного платежа: '<id>@<YYYY-MM-DD>' */
+  plannedRef?: string;
+  createdAt?: string;
 }
 
-export type TxKind = 'expense' | 'income' | 'transfer' | 'refund';
+/** matched — ручная операция, которая позже нашлась в выписке банка (не считаем дважды) */
+export type TxKind = 'expense' | 'income' | 'transfer' | 'refund' | 'matched';
+
+export const MANUAL_ACCOUNT_ID = 'manual';
 
 export interface ClassifiedTx extends RawTx {
   kind: TxKind;
@@ -62,6 +72,7 @@ export interface ClassifiedTx extends RawTx {
   needsReview?: boolean;
   merchant: string;      // нормализованное имя для правил
   overridden?: boolean;
+  matchedWith?: string;  // id операции из выписки, с которой совпала ручная
 }
 
 export interface ParsedStatement {
@@ -89,6 +100,9 @@ export interface Goal {
   deadline?: string;     // YYYY-MM-DD
 }
 
+export type Period = 'month' | 'quarter' | 'year';
+
+/** Постоянный платёж или регулярное поступление */
 export interface Planned {
   id: string;
   title: string;
@@ -98,6 +112,9 @@ export interface Planned {
   enabled: boolean;
   auto?: boolean;
   key?: string;          // ключ автоопределения, чтобы не дублировать
+  category?: string;
+  period?: Period;       // по умолчанию — каждый месяц
+  startMonth?: number;   // 1–12: для квартальных и годовых — месяц первого платежа
 }
 
 export interface ManualDebt {
@@ -117,6 +134,10 @@ export interface Settings {
   debtOverrides: Record<string, { rate?: number; minPayment?: number; dueDay?: number }>;
   manualDebts: ManualDebt[];
   debtBudget?: number;            // сколько в месяц готов отдавать на долги
+  /** остаток, который пользователь ввёл сам («сейчас на картах») */
+  balanceOverride?: { amount: number; at: string }; // at — ISO дата-время
+  safetyBuffer: number;           // неснижаемый остаток для консультанта
+  notifications: boolean;
 }
 
 export interface AppData {
@@ -145,6 +166,8 @@ export function emptyData(): AppData {
       plannedDismissed: [],
       debtOverrides: {},
       manualDebts: [],
+      safetyBuffer: 2000,
+      notifications: false,
     },
   };
 }

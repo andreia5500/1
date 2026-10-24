@@ -77,3 +77,69 @@ describe('логика', () => {
     expect(scrub('Перевод от И. Иван Петрович')).toBe('Перевод от [ФИО]');
   });
 });
+
+import { advise, occurrences } from '../src/core/advisor';
+import { MANUAL_ACCOUNT_ID } from '../src/core/types';
+
+describe('консультант', () => {
+  const base = () => {
+    const d = emptyData();
+    d.accounts = [{ id: 'sber:1', bank: 'sber', kind: 'debit', title: 'Сбер дебет', number: '1', cards: ['1111'], balance: 12000, balanceDate: '2026-10-24' }];
+    d.settings.safetyBuffer = 1000;
+    d.settings.planned = [
+      { id: 'rent', title: 'Кредит', type: 'payment', amount: 15000, day: 5, enabled: true },
+      { id: 'net', title: 'Интернет', type: 'payment', amount: 1000, day: 28, enabled: true },
+      { id: 'sal', title: 'Зарплата', type: 'income', amount: 50000, day: 9, enabled: true },
+    ];
+    return d;
+  };
+
+  it('даты постоянных платежей', () => {
+    expect(occurrences({ id: 'a', title: '', type: 'payment', amount: 1, day: 31, enabled: true }, '2026-10-24', '2026-12-10')).toEqual(['2026-10-31', '2026-11-30']);
+    expect(occurrences({ id: 'q', title: '', type: 'payment', amount: 1, day: 10, enabled: true, period: 'quarter', startMonth: 1 }, '2026-01-01', '2026-12-31')).toEqual(['2026-01-10', '2026-04-10', '2026-07-10', '2026-10-10']);
+    expect(occurrences({ id: 'y', title: '', type: 'payment', amount: 1, day: 1, enabled: true, period: 'year', startMonth: 3 }, '2026-10-24', '2027-04-01')).toEqual(['2027-03-01']);
+  });
+
+  it('предупреждает, что на платёж 5-го не хватит, и советует, как успеть', () => {
+    const d = base();
+    const a = advise(d, classifyAll(d), '2026-10-24');
+    const w = a.warnings.find(w => w.level === 'danger')!;
+    expect(w.title).toMatch(/Кредит/);
+    expect(w.date).toBe('2026-11-05');
+    expect(a.safePerDay).toBeLessThan(0);   // даже без трат не хватает до зарплаты
+    expect(a.monthlyPayments).toBe(16000);
+  });
+
+  it('хватает — говорит, сколько можно тратить в день', () => {
+    const d = base();
+    d.accounts[0].balance = 40000;
+    const a = advise(d, classifyAll(d), '2026-10-24');
+    expect(a.warnings[0].level).toBe('ok');
+    // самый узкий день — 8.12, накануне декабрьской зарплаты:
+    // 40000 + 50000 − 1000 − 15000 − 1000 − 15000 − подушка 1000 = 57000 на 45 дней ≈ 1266 в день
+    expect(a.safePerDay).toBe(1266);
+    expect(a.safeUntil).toBe('2026-12-08');
+    expect(a.warnings.some(w => w.level === 'info' && /сразу отложите/.test(w.title))).toBe(true);
+  });
+
+  it('ручная покупка меняет остаток, а потом сверяется с выпиской', () => {
+    const d = base();
+    d.txs.push({ id: 'm1', accountId: MANUAL_ACCOUNT_ID, date: '2026-10-25', amount: -2500, description: 'Пятёрочка', manual: true, manualCategory: 'Продукты', createdAt: '2026-10-25T10:00' });
+    let txs = classifyAll(d);
+    expect(advise(d, txs, '2026-10-25').cash.amount).toBe(12000 - 2500);
+    // пришла выписка с этой покупкой и новым остатком
+    d.txs.push({ id: 'i1', accountId: 'sber:1', date: '2026-10-26', amount: -2500, description: 'PYATEROCHKA 123', bankCategory: 'Супермаркеты' });
+    d.accounts[0].balance = 9500; d.accounts[0].balanceDate = '2026-10-26';
+    txs = classifyAll(d);
+    expect(txs.find(t => t.id === 'm1')!.kind).toBe('matched');
+    expect(summarizeMonth(txs, '2026-10').expense).toBe(2500);   // не задвоилось
+    expect(advise(d, txs, '2026-10-26').cash.amount).toBe(9500);
+  });
+
+  it('отметка «оплачено» убирает платёж из прогноза', () => {
+    const d = base();
+    d.txs.push({ id: 'p1', accountId: MANUAL_ACCOUNT_ID, date: '2026-10-28', amount: -1000, description: 'Интернет', manual: true, plannedRef: 'net@2026-10-28', createdAt: '2026-10-28T09:00' });
+    const a = advise(d, classifyAll(d), '2026-10-28');
+    expect(a.upcoming.some(u => u.occ.key === 'net@2026-10-28')).toBe(false);
+  });
+});

@@ -56,14 +56,14 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: MoiFinansy-0.1.${{ github.run_number }}
+          name: MoiFinansy-0.2.${{ github.run_number }}
           path: FinanceApp/MoiFinansy.apk
 
       - name: Публикация в Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: finance-v0.1.${{ github.run_number }}
-          name: Мои финансы 0.1.${{ github.run_number }}
+          tag_name: finance-v0.2.${{ github.run_number }}
+          name: Мои финансы 0.2.${{ github.run_number }}
           target_commitish: ${{ github.sha }}
           make_latest: true
           files: FinanceApp/MoiFinansy.apk
@@ -71,3 +71,4 @@ jobs:
             Приложение «Мои финансы» для Android.
             Скачайте MoiFinansy.apk на телефон и установите (разрешите установку из этого источника).
             Новые версии ставятся поверх старой, данные сохраняются.
+            Новое в 0.2: постоянные платежи и консультант, ручной ввод кнопкой «+», уведомления, новый дизайн.

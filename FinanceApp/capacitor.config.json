@@ -2,5 +2,14 @@
   "appId": "ru.andreia.finance",
   "appName": "Мои финансы",
   "webDir": "dist",
-  "android": { "allowMixedContent": false, "captureInput": true }
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_finance",
+      "iconColor": "#2D47CC"
+    }
+  }
 }

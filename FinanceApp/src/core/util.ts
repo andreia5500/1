@@ -73,3 +73,11 @@ export function hash(s: string): string {
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
   return (h >>> 0).toString(36);
 }
+
+const MONTHS_DAT = ['январю', 'февралю', 'марту', 'апрелю', 'маю', 'июню', 'июлю', 'августу', 'сентябрю', 'октябрю', 'ноябрю', 'декабрю'];
+/** «к ноябрю 2027» — через сколько-то месяцев от даты */
+export function byMonthAfter(from: string, months: number): string {
+  const [y, m] = from.split('-').map(Number);
+  const idx = (m - 1) + months;
+  return `${MONTHS_DAT[idx % 12]} ${y + Math.floor(idx / 12)}`;
+}

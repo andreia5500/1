@@ -2,7 +2,8 @@
 import type { AppData, ClassifiedTx } from './types';
 import { summarizeMonth } from './analytics';
 import { collectDebts } from './debts';
-import { forecastMonth, goalPlan } from './forecast';
+import { goalPlan } from './forecast';
+import { advise } from './advisor';
 import { monthTitle } from './util';
 
 export function scrub(s: string): string {
@@ -30,7 +31,13 @@ export function buildAiSummary(data: AppData, txs: ClassifiedTx[], months: strin
     lines.push('', '## Цели');
     for (const g of data.settings.goals) { const p = goalPlan(g, today); lines.push(`${scrub(g.title)}: нужно ${r(g.target)} ₽, накоплено ${r(g.saved)} ₽${g.deadline ? `, к ${g.deadline}, нужно ~${r(p.perMonth)} ₽/мес` : ''}`); }
   }
-  const f = forecastMonth(data, txs, today);
-  lines.push('', `## Прогноз на конец месяца: свободные деньги ≈ ${r(f.endBalance)} ₽ (повседневные траты ≈ ${r(f.dailyEveryday)} ₽/день).`);
+  const a = advise(data, txs, today);
+  const pays = data.settings.planned.filter(p => p.enabled && p.type === 'payment');
+  if (pays.length) {
+    lines.push('', '## Постоянные платежи');
+    for (const p of pays) lines.push(`${scrub(p.title)}: ${r(p.amount)} ₽, ${p.day}-го числа${p.period === 'quarter' ? ', раз в квартал' : p.period === 'year' ? ', раз в год' : ''}`);
+  }
+  lines.push('', `## Прогноз: свободные деньги сейчас ≈ ${r(a.cash.amount)} ₽, повседневные траты ≈ ${r(a.rate)} ₽/день, безопасно тратить ≈ ${r(a.safePerDay)} ₽/день.`);
+  for (const w of a.warnings.filter(w => w.level === 'danger' || w.level === 'warn')) lines.push(`Риск: ${scrub(w.title)}`);
   return lines.join('\n');
 }

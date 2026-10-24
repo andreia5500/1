@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'preact/hooks';
 import { useStore, type TxFilter } from '../store';
-import type { ClassifiedTx, TxKind } from '../core/types';
+import { MANUAL_ACCOUNT_ID, type ClassifiedTx, type TxKind } from '../core/types';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, TRANSFER_CATEGORY } from '../core/categories';
 import { prettyName } from '../core/classify';
 import { dayTitle, fmtDate, monthKey, monthTitle } from '../core/util';
-import { Dot, Icons, Money, Sheet } from './components';
+import { Dot, Money, Sheet } from './components';
 
 const KINDS: { id: TxFilter['kind'] | undefined; label: string }[] = [
   { id: undefined, label: 'Все' },
@@ -12,13 +12,14 @@ const KINDS: { id: TxFilter['kind'] | undefined; label: string }[] = [
   { id: 'income', label: 'Доходы' },
   { id: 'transfer', label: 'Свои переводы' },
   { id: 'review', label: 'Проверить' },
+  { id: 'manual', label: 'Вручную' },
 ];
 
 export function Transactions({ filter, setFilter }: { filter: TxFilter; setFilter: (f: TxFilter) => void }) {
-  const { txs, data } = useStore();
+  const { txs, data, openAdd } = useStore();
   const [q, setQ] = useState('');
   const [edit, setEdit] = useState<ClassifiedTx | null>(null);
-  const accTitle = useMemo(() => new Map(data.accounts.map(a => [a.id, a.title])), [data.accounts]);
+  const accTitle = useMemo(() => new Map([...data.accounts.map(a => [a.id, a.title] as [string, string]), [MANUAL_ACCOUNT_ID, 'вручную']]), [data.accounts]);
 
   const list = useMemo(() => txs.filter(t => {
     if (filter.month && monthKey(t.date) !== filter.month) return false;
@@ -27,6 +28,7 @@ export function Transactions({ filter, setFilter }: { filter: TxFilter; setFilte
     if (filter.kind === 'expense' && t.kind !== 'expense' && t.kind !== 'refund') return false;
     if (filter.kind === 'income' && t.kind !== 'income') return false;
     if (filter.kind === 'transfer' && t.kind !== 'transfer') return false;
+    if (filter.kind === 'manual' && !t.manual) return false;
     if (q && !(t.description + ' ' + t.category).toLowerCase().includes(q.toLowerCase())) return false;
     return true;
   }), [txs, filter, q]);
@@ -40,37 +42,37 @@ export function Transactions({ filter, setFilter }: { filter: TxFilter; setFilte
   return (
     <>
       <div class="top"><h1>Операции</h1></div>
-      <div class="chips" role="tablist">
+      <div class="chips">
         {KINDS.map(k => (
           <button key={k.label} class={'chip' + (filter.kind === k.id ? ' on' : '')} onClick={() => setFilter({ ...filter, kind: k.id })}>{k.label}</button>
         ))}
       </div>
       {(filter.category || filter.month) && (
-        <div class="chips">
+        <div class="chips" style={{ paddingTop: 0 }}>
           {filter.month && <button class="chip on" onClick={() => setFilter({ ...filter, month: undefined })}>{monthTitle(filter.month)} ✕</button>}
           {filter.category && <button class="chip on" onClick={() => setFilter({ ...filter, category: undefined })}>{filter.category} ✕</button>}
         </div>
       )}
-      <input class="input" type="search" placeholder="Поиск по описанию" value={q} onInput={e => setQ(e.currentTarget.value)} />
+      <div class="pad"><input class="input" type="search" placeholder="Поиск по описанию" aria-label="Поиск по описанию" value={q} onInput={e => setQ(e.currentTarget.value)} style={{ background: 'var(--card)' }} /></div>
       {filter.kind === 'review' && list.length > 0 && (
-        <p class="note">По этим операциям из выписки не понять, что это: трата, перевод себе или за что платёж. Нажмите на операцию и уточните.</p>
+        <p class="note warnbg" style={{ margin: '12px 16px 0' }}>По этим операциям из выписки не понять, что это: трата, перевод себе или за что платёж. Нажмите на операцию и уточните.</p>
       )}
-      {!list.length && <p class="muted" style={{ marginTop: 16 }}>Ничего не найдено.</p>}
+      {!list.length && <p class="muted pad" style={{ marginTop: 16 }}>Ничего не найдено.</p>}
       {groups.map(([date, items]) => (
         <div key={date}>
-          <div class="day-head"><span>{dayTitle(date)}</span></div>
-          <div class="rows" style={{ paddingInline: 8 }}>
+          <div class="day-head">{dayTitle(date)}</div>
+          <div class="card" style={{ padding: '2px 0' }}>
             {items.map(t => (
-              <button class="row" key={t.id} onClick={() => setEdit(t)}>
+              <button class="row" key={t.id} onClick={() => (t.manual ? openAdd({ editId: t.id }) : setEdit(t))} style={{ opacity: t.kind === 'matched' ? 0.55 : 1 }}>
                 <Dot category={t.category} />
                 <div class="grow">
                   <div class="title">{prettyName(t.description)}</div>
                   <div class="meta">
-                    {t.needsReview && <span class="warn">уточнить · </span>}
-                    {t.kind === 'transfer' ? (t.transferNote ?? TRANSFER_CATEGORY) : t.category}{t.kind === 'refund' ? ', возврат' : ''} · {accTitle.get(t.accountId)}
+                    {t.needsReview && <span class="warn">уточнить, </span>}
+                    {t.kind === 'transfer' ? (t.transferNote ?? TRANSFER_CATEGORY) : t.category}{t.kind === 'refund' ? ', возврат' : ''}{t.kind === 'matched' ? ', уже есть в выписке' : ''}, {accTitle.get(t.accountId)}
                   </div>
                 </div>
-                <Money v={t.amount} sign className={t.kind === 'transfer' ? 'muted' : t.amount > 0 ? 'pos' : ''} />
+                <Money v={t.amount} sign className={(t.kind === 'transfer' || t.kind === 'matched' ? 'muted' : t.amount > 0 ? 'pos' : '') + ' bold'} />
               </button>
             ))}
           </div>
@@ -115,17 +117,13 @@ function EditTx({ t, onClose, accountTitle }: { t: ClassifiedTx; onClose: () => 
   };
 
   return (
-    <Sheet onClose={onClose}>
-      <div class="top" style={{ minHeight: 0 }}>
-        <h2 style={{ margin: 0, flex: 1 }}><Money v={t.amount} sign className={t.amount > 0 ? 'pos' : ''} /></h2>
-        <button class="icon-btn" aria-label="Закрыть" onClick={onClose}>{Icons.close}</button>
-      </div>
+    <Sheet onClose={onClose} title={<Money v={t.amount} sign className={t.amount > 0 ? 'pos' : ''} />}>
       <p style={{ marginTop: 6 }}>{t.description}</p>
-      <p class="faint">{fmtDate(t.date)}{t.time ? ' ' + t.time : ''} · {accountTitle}{t.bankCategory ? ` · в выписке: «${t.bankCategory}»` : ''}</p>
-      {t.transferNote && <p class="note blue">{t.transferNote}</p>}
+      <p class="tiny muted" style={{ marginTop: 4 }}>{fmtDate(t.date)}{t.time ? ' ' + t.time : ''} · {accountTitle}{t.bankCategory ? ` · в выписке: «${t.bankCategory}»` : ''}</p>
+      {t.transferNote && <p class="note">{t.transferNote}</p>}
       {t.needsReview && (t.category === 'Платежи в СберОнлайн'
-        ? <p class="note">В выписке не сказано, за что этот платёж из СберБанк Онлайн. Посмотрите его в истории операций банка и выберите категорию — с галочкой ниже похожие платежи разнесутся сами.</p>
-        : <p class="note">По выписке не понять, кому ушли или откуда пришли эти деньги. Если это ваш собственный счёт — выберите «Перевод себе», тогда сумма не попадёт в доходы и расходы.</p>)}
+        ? <p class="note warnbg">В выписке не сказано, за что этот платёж из СберБанк Онлайн. Посмотрите его в истории операций банка и выберите категорию — с галочкой ниже похожие платежи разнесутся сами.</p>
+        : <p class="note warnbg">По выписке не понять, кому ушли или откуда пришли эти деньги. Если это ваш собственный счёт — выберите «Перевод себе», тогда сумма не попадёт в доходы и расходы.</p>)}
 
       <div class="field"><span>Что это</span>
         <div class="seg">
@@ -147,8 +145,8 @@ function EditTx({ t, onClose, accountTitle }: { t: ClassifiedTx; onClose: () => 
         </label>
       )}
       <div class="btns">
-        <button class="btn primary" onClick={save}>Сохранить</button>
-        {t.overridden && <button class="btn" onClick={reset}>Сбросить</button>}
+        <button class="btn primary wide" onClick={save}>Сохранить</button>
+        {t.overridden && <button class="btn wide" onClick={reset}>Вернуть автоматическую категорию</button>}
       </div>
     </Sheet>
   );

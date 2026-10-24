@@ -104,9 +104,9 @@ export function suggestPlanned(data: AppData, txs: ClassifiedTx[]): Planned[] {
   const latest = (pred: (t: ClassifiedTx) => boolean) => txs.filter(pred).sort((a, b) => b.date.localeCompare(a.date))[0];
 
   const sal = latest(t => t.kind === 'income' && /заработная плата|зарплата/i.test(t.description) && !/аванс/i.test(t.description));
-  if (sal) add({ id: 'auto-salary', key: 'salary', title: 'Зарплата', type: 'income', amount: sal.amount, day: Number(sal.date.slice(8)), enabled: true, auto: true });
+  if (sal) add({ id: 'auto-salary', key: 'salary', title: 'Зарплата', type: 'income', amount: sal.amount, day: Number(sal.date.slice(8)), enabled: true, auto: true, category: 'Зарплата' });
   const adv = latest(t => t.kind === 'income' && /аванс/i.test(t.description));
-  if (adv) add({ id: 'auto-advance', key: 'advance', title: 'Аванс', type: 'income', amount: adv.amount, day: Number(adv.date.slice(8)), enabled: true, auto: true });
+  if (adv) add({ id: 'auto-advance', key: 'advance', title: 'Аванс', type: 'income', amount: adv.amount, day: Number(adv.date.slice(8)), enabled: true, auto: true, category: 'Зарплата' });
 
   // Регулярные категории: берём последний платёж по каждому продавцу
   const regularCats = new Set(EXPENSE_CATEGORIES.filter(c => c.regular).map(c => c.name));
@@ -118,54 +118,49 @@ export function suggestPlanned(data: AppData, txs: ClassifiedTx[]): Planned[] {
     list.sort((a, b) => b.date.localeCompare(a.date));
     const lastMonth = monthKey(list[0].date);
     const monthSum = sum(list.filter(t => monthKey(t.date) === lastMonth).map(t => -t.amount));
-    add({ id: 'auto-' + merchant, key: 'pay:' + merchant, title: prettyName(list[0].description).slice(0, 45), type: 'payment', amount: monthSum, day: Number(list[0].date.slice(8)), enabled: true, auto: true });
+    add({ id: 'auto-' + merchant, key: 'pay:' + merchant, title: prettyName(list[0].description).slice(0, 45), type: 'payment', amount: monthSum, day: Number(list[0].date.slice(8)), enabled: true, auto: true, category: list[0].category });
   }
   // Минимальные платежи по кредиткам
   for (const a of data.accounts) {
     if (a.kind === 'credit' && a.minPayment && a.minPaymentDue) {
-      add({ id: 'auto-min-' + a.id, key: 'min:' + a.id, title: `Мин. платёж: ${a.title}`, type: 'payment', amount: a.minPayment, day: Number(a.minPaymentDue.slice(8)), enabled: true, auto: true });
+      add({ id: 'auto-min-' + a.id, key: 'min:' + a.id, title: `Мин. платёж: ${a.title}`, type: 'payment', amount: a.minPayment, day: Number(a.minPaymentDue.slice(8)), enabled: true, auto: true, category: 'Проценты по кредитам' });
     }
   }
   return out;
 }
 
-export interface Tip { title: string; text: string; amount?: number }
+export interface Tip { title: string; text: string; amount?: number; category?: string; suggestLimit?: number }
 
 /** Подсказки, где можно сэкономить — только по фактам из выписок */
-export function savingTips(txs: ClassifiedTx[], month: string, accounts: Account[]): Tip[] {
+export function savingTips(txs: ClassifiedTx[], month: string, _accounts?: Account[]): Tip[] {
   const tips: Tip[] = [];
   const m = txs.filter(t => monthKey(t.date) === month && t.kind === 'expense');
   const fees = m.filter(t => t.category === 'Комиссии банка');
   if (fees.length) {
     const v = sum(fees.map(t => -t.amount));
-    tips.push({ title: 'Комиссии банка', amount: v, text: `${plural(fees.length, 'комиссия', 'комиссии', 'комиссий')} на ${fmt(v)}. Например: «${fees[0].description.slice(0, 50)}». Снимайте наличные в банкоматах своего банка или в пределах бесплатного лимита.` });
+    tips.push({ title: 'Комиссии банка', amount: v, category: 'Комиссии банка', text: `${plural(fees.length, 'комиссия', 'комиссии', 'комиссий')} на ${fmt(v)}. Например: «${fees[0].description.slice(0, 50)}». Снимайте наличные в банкоматах своего банка или в пределах бесплатного лимита.` });
   }
   const mp = m.filter(t => t.category === 'Маркетплейсы');
   if (mp.length >= 5) {
     const gross = sum(mp.map(t => -t.amount));
     const ref = sum(txs.filter(t => monthKey(t.date) === month && t.kind === 'refund' && t.category === 'Маркетплейсы').map(t => t.amount));
     const small = mp.filter(t => -t.amount < 500).length;
-    tips.push({ title: 'Маркетплейсы', amount: round2(gross - ref), text: `${plural(mp.length, 'покупка', 'покупки', 'покупок')} на ${fmt(gross)}${ref > 0 ? ` (минус возвраты ${fmt(ref)} = ${fmt(gross - ref)})` : ''}, в среднем ${fmt(gross / mp.length)}; ${small} из них дешевле 500 ₽. Мелкие частые заказы незаметно складываются — поставьте лимит на категорию и собирайте корзину раз в неделю.` });
+    const net = round2(gross - ref);
+    tips.push({
+      title: `Маркетплейсы: ${plural(mp.length, 'покупка', 'покупки', 'покупок')} за месяц`, amount: net, category: 'Маркетплейсы',
+      suggestLimit: Math.max(500, Math.round(net * 0.8 / 100) * 100),
+      text: `${fmt(gross)}${ref > 0 ? `, после возвратов ${fmt(net)}` : ''}. Средний чек ${fmt(gross / mp.length)}, ${small} из них дешевле 500 ₽ — мелкие заказы складываются незаметно.`,
+    });
   }
   const subs = m.filter(t => t.category === 'Подписки и развлечения');
   if (subs.length) {
     const v = sum(subs.map(t => -t.amount));
-    tips.push({ title: 'Подписки', amount: v, text: `${plural(subs.length, 'списание', 'списания', 'списаний')} на ${fmt(v)}: ${[...new Set(subs.map(t => t.description.slice(0, 25)))].slice(0, 4).join(', ')}. Проверьте, всеми ли пользуетесь.` });
-  }
-  const credits = accounts.filter(a => a.kind === 'credit' && (a.debt ?? 0) > 0);
-  const totalDebt = sum(credits.map(a => a.debt ?? 0));
-  if (totalDebt > 0) {
-    const withRate = credits.filter(a => a.rate);
-    const monthly = sum(withRate.map(a => (a.debt ?? 0) * (a.rate! / 100) / 12));
-    tips.push({
-      title: 'Долг по кредиткам', amount: totalDebt,
-      text: `Общий долг ${fmt(totalDebt)}.` + (monthly > 0 ? ` Если выйти из льготного периода, проценты составят около ${fmt(monthly)} в месяц (по картам с известной ставкой).` : '') + ' Погашение кредиток — самая выгодная «экономия»: см. вкладку «Долги».',
-    });
+    tips.push({ title: 'Подписки', amount: v, category: 'Подписки и развлечения', text: `${plural(subs.length, 'списание', 'списания', 'списаний')} на ${fmt(v)}: ${[...new Set(subs.map(t => t.description.slice(0, 25)))].slice(0, 4).join(', ')}. Проверьте, всеми ли пользуетесь.` });
   }
   const cash = m.filter(t => t.category === 'Наличные');
   if (cash.length) {
     const v = sum(cash.map(t => -t.amount));
-    tips.push({ title: 'Наличные', amount: v, text: `Снято ${fmt(v)} — эти траты не видны в анализе. Если платить картой, приложение покажет, куда они ушли.` });
+    tips.push({ title: 'Наличные', amount: v, text: `Снято ${fmt(v)} — в выписке не видно, на что они ушли. Записывайте траты наличными кнопкой «+», тогда они попадут в анализ.` });
   }
   return tips;
 }

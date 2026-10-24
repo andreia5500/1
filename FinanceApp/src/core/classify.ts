@@ -134,6 +134,10 @@ export function classifyAll(data: AppData): ClassifiedTx[] {
   const rules = new Map(data.rules.map(r => [r.merchant, r]));
 
   const out: (ClassifiedTx & { transferLike?: boolean })[] = data.txs.map(t => {
+    if (t.manual) {
+      const inc = t.amount > 0;
+      return { ...t, kind: inc ? 'income' : 'expense', category: t.manualCategory ?? (inc ? 'Прочие доходы' : 'Прочее'), merchant: merchantKey(t) };
+    }
     const b = baseClassify(t, ctx);
     return { ...t, ...b, transferLike: b.transferLike || b.kind === 'transfer', merchant: merchantKey(t) };
   });
@@ -163,7 +167,7 @@ export function classifyAll(data: AppData): ClassifiedTx[] {
 
   // Правила и ручные правки пользователя
   for (const t of out) {
-    const r = rules.get(t.merchant);
+    const r = t.manual ? undefined : rules.get(t.merchant);
     if (r) { t.category = r.category; if (r.kind) t.kind = r.kind; t.needsReview = false; t.overridden = true; }
     const o = data.overrides[t.id];
     if (o) {
@@ -173,6 +177,16 @@ export function classifyAll(data: AppData): ClassifiedTx[] {
       t.needsReview = false; t.overridden = true;
     }
     delete t.transferLike;
+  }
+
+  // Ручные операции, которые потом пришли в выписке: считаем один раз — по выписке
+  const taken = new Set<string>();
+  const imported = out.filter(t => !t.manual);
+  for (const m of out.filter(t => t.manual).sort((a, b) => a.date.localeCompare(b.date))) {
+    const hit = imported.find(t => !taken.has(t.id) && Math.sign(t.amount) === Math.sign(m.amount)
+      && Math.abs(Math.abs(t.amount) - Math.abs(m.amount)) < 0.01
+      && diffDays(m.date, t.date) >= -1 && diffDays(m.date, t.date) <= 4);
+    if (hit) { taken.add(hit.id); m.kind = 'matched'; m.matchedWith = hit.id; }
   }
   return out.sort((x, y) => (y.date + (y.time ?? '')).localeCompare(x.date + (x.time ?? '')));
 }
