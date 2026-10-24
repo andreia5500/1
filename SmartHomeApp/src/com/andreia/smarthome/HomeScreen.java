@@ -36,6 +36,21 @@ final class HomeScreen {
         EntityAdapter favoritesAdapter();
 
         void vkCommand(String command);
+
+        void stepTemperature(Entity e, int direction);
+    }
+
+    /** One line of the event log. */
+    static final class Event {
+        final long when;
+        final String entityId;
+        final String state;
+
+        Event(long when, String entityId, String state) {
+            this.when = when;
+            this.entityId = entityId;
+            this.state = state;
+        }
     }
 
     /** What the screen shows besides entity states. */
@@ -49,6 +64,7 @@ final class HomeScreen {
         String insideId;
         String powerId;
         double[] powerHistory;
+        List<Event> events;
     }
 
     private static final String[] DOOR = {"door", "window", "garage_door", "opening"};
@@ -65,7 +81,10 @@ final class HomeScreen {
         this.host = host;
     }
 
+    private Map<String, Entity> lastEntities;
+
     void render(Model m) {
+        lastEntities = m.entities;
         root.removeAllViews();
         Collection<Entity> all = m.entities.values();
         List<Entity> alerts = alerts(m);
@@ -103,8 +122,14 @@ final class HomeScreen {
         if (temps != null) add(temps);
         View power = powerCard(m, alerts.isEmpty());
         if (power != null) add(power);
+        View ups = upsCard(m.entities);
+        if (ups != null) add(ups);
         View sensors = sensorsCard(all);
         if (sensors != null) add(sensors);
+        View heating = heatingCard(all);
+        if (heating != null) add(heating);
+        View log = eventsCard(m);
+        if (log != null) add(log);
         addFavorites(m);
         if (m.online) {
             add(vkCard(false));
@@ -162,7 +187,8 @@ final class HomeScreen {
         for (Entity e : m.entities.values()) {
             boolean firing = ("binary_sensor".equals(e.domain) && "on".equals(e.state)
                     && (has(LEAK, e.deviceClass()) || has(SMOKE, e.deviceClass())))
-                    || ("alarm_control_panel".equals(e.domain) && "triggered".equals(e.state));
+                    || ("alarm_control_panel".equals(e.domain) && "triggered".equals(e.state))
+                    || onBattery(e);
             if (firing && e.primary() && !m.dismissed.contains(alertKey(e))) {
                 list.add(e);
             }
@@ -194,15 +220,20 @@ final class HomeScreen {
 
         LinearLayout body = ui.vertical();
         String kind = "alarm_control_panel".equals(e.domain) ? "Тревога охраны"
+                : onBattery(e) ? "Нет электричества"
                 : has(LEAK, e.deviceClass()) ? "Протечка" : "Дым";
-        String place = "alarm_control_panel".equals(e.domain) ? e.name() : shortName(e);
+        String place = "alarm_control_panel".equals(e.domain) ? e.name()
+                : onBattery(e) ? "дом на ИБП" : shortName(e);
         TextView title = ui.text(kind + " — " + place, 16.5f, R.color.alarm);
         title.setTypeface(Ui.MEDIUM);
         body.addView(title);
         String time = e.lastChanged > 0
                 ? "Сработал в " + new SimpleDateFormat("HH:mm", Locale.US).format(new Date(e.lastChanged)) + ". "
                 : "";
-        TextView desc = ui.text(time + "Датчик: " + e.name() + ".", 13.5f, R.color.text_body);
+        String detail = onBattery(e) ? upsSummary(lastEntities, upsPrefix(e)) : "Датчик: " + e.name() + ".";
+        TextView desc = ui.text((onBattery(e) && e.lastChanged > 0
+                ? "С " + new SimpleDateFormat("HH:mm", Locale.US).format(new Date(e.lastChanged)) + ". " : time)
+                + detail, 13.5f, R.color.text_body);
         desc.setLineSpacing(0, 1.2f);
         body.addView(desc, ui.margins(ui.matchWidth(), 0, 4, 0, 0));
 
@@ -646,6 +677,274 @@ final class HomeScreen {
             }
         });
         root.addView(link, ui.margins(ui.matchWidth(), 18, items.isEmpty() ? 0 : 4, 18, 12));
+    }
+
+    // ---- UPS (Network UPS Tools) ---------------------------------------------------------
+
+    /** NUT exposes "<ups>_status_data" with flags like "OL" (mains) or "OB DISCHRG" (battery). */
+    static boolean onBattery(Entity e) {
+        return "sensor".equals(e.domain) && e.id.endsWith("_status_data")
+                && (" " + e.state + " ").contains(" OB ");
+    }
+
+    private static String upsPrefix(Entity statusData) {
+        return statusData.id.substring(0, statusData.id.length() - "_status_data".length());
+    }
+
+    private static Entity upsStatus(Map<String, Entity> all) {
+        for (Entity e : all.values()) {
+            if ("sensor".equals(e.domain) && e.id.endsWith("_status_data") && all.containsKey(
+                    upsPrefix(e) + "_battery_charge")) {
+                return e;
+            }
+        }
+        return null;
+    }
+
+    private static String num(Map<String, Entity> all, String id) {
+        Entity e = all.get(id);
+        return e == null ? null : Format.number(e.state);
+    }
+
+    /** "Заряд 100% · хватит на ~33 мин · нагрузка 12%". */
+    static String upsSummary(Map<String, Entity> all, String prefix) {
+        StringBuilder sb = new StringBuilder();
+        String charge = num(all, prefix + "_battery_charge");
+        if (charge != null) sb.append("Заряд ").append(charge).append('%');
+        Entity rt = all.get(prefix + "_battery_runtime");
+        if (rt != null) {
+            try {
+                long min = Math.round(Double.parseDouble(rt.state) / 60);
+                if (sb.length() > 0) sb.append(" · ");
+                sb.append("хватит на ~").append(min >= 90 ? (min / 60) + " ч " + (min % 60) + " мин" : min + " мин");
+            } catch (NumberFormatException ignored) {
+                // Unknown runtime.
+            }
+        }
+        String load = num(all, prefix + "_load");
+        if (load != null) {
+            if (sb.length() > 0) sb.append(" · ");
+            sb.append("нагрузка ").append(load).append('%');
+        }
+        return sb.toString();
+    }
+
+    private View upsCard(Map<String, Entity> all) {
+        final Entity status = upsStatus(all);
+        if (status == null || !status.available()) return null;
+        String prefix = upsPrefix(status);
+        boolean battery = onBattery(status);
+        LinearLayout card = ui.horizontal();
+        card.setBackgroundResource(R.drawable.card);
+        card.setPadding(ui.dp(18), ui.dp(15), ui.dp(18), ui.dp(15));
+        card.addView(ui.icon(R.drawable.ic_bolt, battery ? R.color.alarm : R.color.ink, 19));
+        LinearLayout body = ui.vertical();
+        TextView t = ui.text(battery ? "Дом на ИБП" : "Электричество есть", 14.5f,
+                battery ? R.color.alarm : R.color.text);
+        t.setTypeface(Ui.MEDIUM);
+        body.addView(t);
+        String in = num(all, prefix + "_input_voltage");
+        String summary = upsSummary(all, prefix);
+        TextView sub = ui.text((in != null && !battery ? "Сеть " + in + " В · " : "") + "ИБП: "
+                + summary.substring(0, 1).toLowerCase() + summary.substring(1), 12.5f, R.color.text_dim);
+        body.addView(sub, ui.margins(ui.matchWidth(), 0, 2, 0, 0));
+        card.addView(body, ui.margins(ui.weight(1), 13, 0, 0, 0));
+        card.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                host.openDetails(status);
+            }
+        });
+        return card;
+    }
+
+    // ---- heating --------------------------------------------------------------------
+
+    /** "Обогрев тамбур z2 Температура тамбур" -> "Тамбур". */
+    static String climateLabel(Entity e) {
+        List<String> out = new ArrayList<String>();
+        for (String w : e.name().split("\\s+")) {
+            String l = w.toLowerCase();
+            if (l.equals("обогрев") || l.equals("z2") || l.equals("температура") || l.equals("отопление")) continue;
+            boolean dup = false;
+            for (String o : out) {
+                if (o.equalsIgnoreCase(w)) dup = true;
+            }
+            if (!dup) out.add(w);
+        }
+        if (out.isEmpty()) return e.name();
+        StringBuilder sb = new StringBuilder();
+        for (String w : out) {
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(w);
+        }
+        return capitalize(sb.toString());
+    }
+
+    private View heatingCard(Collection<Entity> all) {
+        List<Entity> list = new ArrayList<Entity>();
+        for (Entity e : all) {
+            if ("climate".equals(e.domain) && e.primary()) list.add(e);
+        }
+        if (list.isEmpty()) return null;
+        Collections.sort(list, new Comparator<Entity>() {
+            @Override
+            public int compare(Entity a, Entity b) {
+                return climateLabel(a).compareToIgnoreCase(climateLabel(b));
+            }
+        });
+        LinearLayout card = ui.card(R.drawable.card, 14, 18);
+        int heating = 0;
+        for (Entity e : list) {
+            if ("heating".equals(e.attributes.optString("hvac_action"))) heating++;
+        }
+        LinearLayout top = ui.horizontal();
+        top.addView(ui.kicker("Отопление"), ui.weight(1));
+        top.addView(ui.text(heating > 0 ? "греет: " + heating : "никто не греет", 12.5f,
+                heating > 0 ? R.color.accent : R.color.text_dim));
+        card.addView(top, ui.margins(ui.matchWidth(), 0, 2, 0, 4));
+        for (int i = 0; i < list.size(); i++) {
+            if (i > 0) card.addView(ui.divider(), new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ui.dp(1)));
+            card.addView(heatingRow(list.get(i)));
+        }
+        return card;
+    }
+
+    private View heatingRow(final Entity e) {
+        LinearLayout row = ui.horizontal();
+        row.setPadding(0, ui.dp(10), 0, ui.dp(10));
+        row.setBackgroundResource(R.drawable.nav_item);
+        LinearLayout texts = ui.vertical();
+        TextView name = ui.text(climateLabel(e), 14.5f, R.color.text);
+        name.setTypeface(Ui.MEDIUM);
+        texts.addView(name);
+        String cur = Format.number(e.attributes.optString("current_temperature"));
+        boolean off = "off".equals(e.state) || !e.available();
+        boolean heats = "heating".equals(e.attributes.optString("hvac_action"));
+        String sub = (cur != null ? "сейчас " + signedTemp(cur) + "°" : "")
+                + (off ? " · " + (e.available() ? "выключен" : "нет связи") : heats ? " · греет" : "");
+        TextView st = ui.text(sub, 12.5f, heats ? R.color.accent : R.color.text_dim);
+        texts.addView(st, ui.margins(ui.wrap(), 0, 1, 0, 0));
+        row.addView(texts, ui.weight(1));
+
+        double target = e.attributes.optDouble("temperature", Double.NaN);
+        boolean settable = !off && !Double.isNaN(target);
+        TextView minus = smallButton("−", settable);
+        TextView value = ui.number(Double.isNaN(target) ? "—" : Format.number(target) + "°", 20);
+        value.setGravity(Gravity.CENTER);
+        value.setMinWidth(ui.dp(56));
+        value.setAlpha(settable ? 1f : 0.45f);
+        TextView plus = smallButton("+", settable);
+        row.addView(minus);
+        row.addView(value);
+        row.addView(plus);
+        minus.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                host.stepTemperature(e, -1);
+            }
+        });
+        plus.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                host.stepTemperature(e, 1);
+            }
+        });
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                host.openDetails(e); // modes, presets, exact temperature
+            }
+        });
+        return row;
+    }
+
+    private TextView smallButton(String label, boolean enabled) {
+        TextView b = ui.button(label, R.drawable.btn_small, R.color.text, 40);
+        b.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 18);
+        b.setPadding(0, 0, 0, 0);
+        b.setLayoutParams(new LinearLayout.LayoutParams(ui.dp(44), ui.dp(40)));
+        b.setEnabled(enabled);
+        b.setAlpha(enabled ? 1f : 0.35f);
+        return b;
+    }
+
+    private static String signedTemp(String formatted) {
+        return formatted.startsWith("−") || formatted.equals("0") ? formatted : "+" + formatted;
+    }
+
+    // ---- event log -------------------------------------------------------------------
+
+    /** Entities whose changes are worth a line in the log. */
+    static boolean logWorthy(Entity e) {
+        if (!e.primary()) return false;
+        if ("alarm_control_panel".equals(e.domain)) return true;
+        if ("binary_sensor".equals(e.domain)) {
+            String dc = e.deviceClass();
+            return has(DOOR, dc) || has(LEAK, dc) || has(SMOKE, dc) || e.id.endsWith("_person_occupancy");
+        }
+        return "sensor".equals(e.domain) && e.id.endsWith("_status_data");
+    }
+
+    /** "Баня: дверь открыта" etc.; null when the change is not interesting (e.g. person left). */
+    static String describe(Entity e, String state) {
+        if ("alarm_control_panel".equals(e.domain)) {
+            return "Охрана: " + Format.state(state).toLowerCase();
+        }
+        if ("sensor".equals(e.domain)) {
+            return (" " + state + " ").contains(" OB ") ? "Пропало электричество, дом на ИБП"
+                    : (" " + state + " ").contains(" OL ") ? "Электричество есть" : null;
+        }
+        boolean on = "on".equals(state);
+        String dc = e.deviceClass();
+        if (e.id.endsWith("_person_occupancy")) {
+            if (!on) return null;
+            String cam = e.name().replaceAll("(?i)\\s*person occupancy$", "");
+            return "Человек · " + cam;
+        }
+        if (has(DOOR, dc)) {
+            if (!"on".equals(state) && !"off".equals(state)) return null;
+            return capitalize(shortName(e)) + ": " + (on ? "открыто" : "закрыто");
+        }
+        if (has(LEAK, dc)) return on ? "Протечка · " + shortName(e).toLowerCase() : null;
+        if (has(SMOKE, dc)) return on ? "Дым · " + shortName(e).toLowerCase() : null;
+        return null;
+    }
+
+    private View eventsCard(Model m) {
+        if (m.events == null) return null;
+        List<String[]> lines = new ArrayList<String[]>();
+        SimpleDateFormat hm = new SimpleDateFormat("HH:mm", Locale.US);
+        for (int i = m.events.size() - 1; i >= 0 && lines.size() < 8; i--) {
+            Event ev = m.events.get(i);
+            Entity e = m.entities.get(ev.entityId);
+            if (e == null) continue;
+            String text = describe(e, ev.state);
+            if (text == null) continue;
+            lines.add(new String[]{hm.format(new Date(ev.when)), text});
+        }
+        LinearLayout card = ui.card(R.drawable.card, 14, 18);
+        LinearLayout top = ui.horizontal();
+        top.addView(ui.kicker("События"), ui.weight(1));
+        top.addView(ui.text("за 12 часов", 12.5f, R.color.text_dim));
+        card.addView(top, ui.margins(ui.matchWidth(), 0, 2, 0, 6));
+        if (lines.isEmpty()) {
+            card.addView(ui.text("Ничего не происходило", 13.5f, R.color.text_dim),
+                    ui.margins(ui.matchWidth(), 0, 4, 0, 2));
+        }
+        for (String[] l : lines) {
+            LinearLayout row = ui.horizontal();
+            row.setGravity(Gravity.TOP);
+            TextView time = ui.text(l[0], 13.5f, R.color.text_dim);
+            time.setMinWidth(ui.dp(52));
+            row.addView(time);
+            TextView text = ui.text(l[1], 13.5f, l[1].startsWith("Протечка") || l[1].startsWith("Дым")
+                    || l[1].startsWith("Пропало") ? R.color.alarm : R.color.text);
+            row.addView(text, ui.weight(1));
+            card.addView(row, ui.margins(ui.matchWidth(), 0, 7, 0, 0));
+        }
+        return card;
     }
 
     // ---- helpers ----------------------------------------------------------------------

@@ -117,6 +117,12 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
     private VkCommands vk;
     private long powerHistoryAt;
     private long shownMinute;
+    private List<HomeScreen.Event> events;
+    private long eventsAt;
+    private Entity pendingDisarm;
+    private Runnable afterConnect;
+    private String pendingDisarmService;
+    private static final int REQ_CONFIRM_DISARM = 7;
     private EditText search;
     private LinearLayout tabBar;
     private Tab tab = Tab.CONTROL;
@@ -336,6 +342,11 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
                     retryDelayMs = 2000;
                     online = true;
                     requestConfig();
+                    if (afterConnect != null) {
+                        Runnable r = afterConnect;
+                        afterConnect = null;
+                        r.run();
+                    }
                 }
             });
         }
@@ -421,7 +432,13 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
         if (pendingTemperature.containsKey(id)) {
             return; // the user is still adjusting it; keep the local value
         }
+        String oldState = e.state;
         e.update(newState);
+        if (events != null && !e.state.equals(oldState) && HomeScreen.logWorthy(e)) {
+            events.add(new HomeScreen.Event(System.currentTimeMillis(), id, e.state));
+            if (events.size() > 300) events.remove(0);
+            if (screen == Screen.HOME) scheduleRebuild();
+        }
         if (powerHistory != null && id.equals(powerHistoryId)) {
             appendPower(e);
         }
@@ -498,6 +515,7 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
             enrich(e);
         }
         rebuildNow();
+        requestEvents(true);
     }
 
     private void enrich(Entity e) {
@@ -829,6 +847,7 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
             return;
         }
         adapter.notifyDataSetChanged();
+        if (screen == Screen.HOME) rebuildNow();
         // Send once the user stops tapping.
         Runnable old = pendingTemperature.remove(e.id);
         if (old != null) ui.removeCallbacks(old);
@@ -880,6 +899,7 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
             if (screen == Screen.CAMERAS && fullscreenCamera == null) {
                 camerasScreen.refreshImages(entities, cameraWidth());
             }
+            if (screen == Screen.HOME) requestEvents(false);
             long minute = System.currentTimeMillis() / 60000;
             if (screen == Screen.HOME && minute != shownMinute) {
                 shownMinute = minute;
@@ -1125,37 +1145,7 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
                 .setItems(labels.toArray(new String[0]), new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface d, int which) {
-                        final String service = services.get(which);
-                        boolean hasCode = !e.attributes.isNull("code_format") && e.attributes.has("code_format");
-                        boolean needsCode = hasCode && ("alarm_disarm".equals(service)
-                                || e.attributes.optBoolean("code_arm_required", true));
-                        if (!needsCode) {
-                            call(e.domain, service, e, null);
-                            return;
-                        }
-                        final EditText code = new EditText(MainActivity.this);
-                        code.setInputType("number".equals(e.attributes.optString("code_format"))
-                                ? InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD
-                                : InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-                        FrameLayout box = new FrameLayout(MainActivity.this);
-                        box.setPadding(dp(24), dp(8), dp(24), 0);
-                        box.addView(code);
-                        new AlertDialog.Builder(MainActivity.this)
-                                .setTitle("Код охраны")
-                                .setView(box)
-                                .setPositiveButton("OK", new DialogInterface.OnClickListener() {
-                                    @Override
-                                    public void onClick(DialogInterface d2, int w) {
-                                        try {
-                                            call(e.domain, service, e,
-                                                    new JSONObject().put("code", code.getText().toString()));
-                                        } catch (JSONException ignored) {
-                                            // Plain string.
-                                        }
-                                    }
-                                })
-                                .setNegativeButton("Отмена", null)
-                                .show();
+                        alarmAction(e, services.get(which)); // code and fingerprint checks
                     }
                 })
                 .show();
@@ -1394,6 +1384,7 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
         m.powerId = prefs.getString("power_sensor", null);
         Entity power = HomeScreen.powerSensor(entities, m.powerId);
         m.powerHistory = power != null && power.id.equals(powerHistoryId) ? powerHistory : null;
+        m.events = events;
         homeScreen.render(m);
     }
 
@@ -1482,6 +1473,56 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
         }
     }
 
+    /** Loads the last 12 hours of door/alarm/leak/person/power changes (at most every 10 minutes). */
+    private void requestEvents(boolean force) {
+        HaConnection c = connection;
+        if (c == null || !c.isAuthenticated()) return;
+        if (!force && events != null && System.currentTimeMillis() - eventsAt < 10 * 60000L) return;
+        JSONArray ids = new JSONArray();
+        for (Entity e : entities.values()) {
+            if (HomeScreen.logWorthy(e)) ids.put(e.id);
+        }
+        if (ids.length() == 0) return;
+        eventsAt = System.currentTimeMillis();
+        java.text.SimpleDateFormat iso = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
+        iso.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+        try {
+            JSONObject msg = new JSONObject()
+                    .put("type", "logbook/get_events")
+                    .put("start_time", iso.format(new java.util.Date(eventsAt - 12 * 3600000L)))
+                    .put("entity_ids", ids);
+            c.request(msg, new HaConnection.DataHandler() {
+                @Override
+                public void onData(Object result) {
+                    if (!(result instanceof JSONArray)) return;
+                    JSONArray rows = (JSONArray) result;
+                    final List<HomeScreen.Event> list = new ArrayList<HomeScreen.Event>();
+                    for (int i = 0; i < rows.length(); i++) {
+                        JSONObject r = rows.optJSONObject(i);
+                        if (r == null || !r.has("state")) continue;
+                        list.add(new HomeScreen.Event((long) (r.optDouble("when", 0) * 1000),
+                                r.optString("entity_id"), r.optString("state")));
+                    }
+                    Collections.sort(list, new Comparator<HomeScreen.Event>() {
+                        @Override
+                        public int compare(HomeScreen.Event a, HomeScreen.Event b) {
+                            return Long.compare(a.when, b.when);
+                        }
+                    });
+                    ui.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            events = list;
+                            if (screen == Screen.HOME) scheduleRebuild();
+                        }
+                    });
+                }
+            });
+        } catch (JSONException ignored) {
+            // Constant keys.
+        }
+    }
+
     /** Step-function history -> evenly spaced points (value held until the next change). */
     static double[] downsample(JSONArray rows, long startMs, int points) {
         long end = System.currentTimeMillis();
@@ -1535,6 +1576,54 @@ public class MainActivity extends Activity implements EntityAdapter.Controller, 
 
     @Override
     public void alarmAction(final Entity alarm, final String service) {
+        if ("alarm_disarm".equals(service) && confirmIdentity(alarm, service)) {
+            return; // continues in onActivityResult
+        }
+        sendAlarmAction(alarm, service);
+    }
+
+    /**
+     * Asks for the phone's fingerprint/PIN before disarming, so a lost phone cannot open the house.
+     * Returns false when the phone has no screen lock (nothing to confirm with).
+     */
+    private boolean confirmIdentity(Entity alarm, String service) {
+        android.app.KeyguardManager km = (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+        if (km == null || !km.isKeyguardSecure()) return false;
+        Intent confirm = km.createConfirmDeviceCredentialIntent("Снять с охраны",
+                "Подтвердите отпечатком пальца или кодом телефона");
+        if (confirm == null) return false;
+        pendingDisarm = alarm;
+        pendingDisarmService = service;
+        startActivityForResult(confirm, REQ_CONFIRM_DISARM);
+        return true;
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQ_CONFIRM_DISARM || pendingDisarm == null) return;
+        final Entity alarm = pendingDisarm;
+        final String service = pendingDisarmService;
+        pendingDisarm = null;
+        if (resultCode != RESULT_OK) {
+            Toast.makeText(this, "Охрана не снята", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Runnable send = new Runnable() {
+            @Override
+            public void run() {
+                sendAlarmAction(alarm, service);
+            }
+        };
+        // The lock screen paused the app and its connection; send once it is back.
+        if (connection != null && connection.isAuthenticated()) {
+            send.run();
+        } else {
+            afterConnect = send;
+        }
+    }
+
+    private void sendAlarmAction(final Entity alarm, final String service) {
         boolean hasCode = alarm.attributes.has("code_format") && !alarm.attributes.isNull("code_format");
         boolean needsCode = hasCode && ("alarm_disarm".equals(service)
                 || alarm.attributes.optBoolean("code_arm_required", true));

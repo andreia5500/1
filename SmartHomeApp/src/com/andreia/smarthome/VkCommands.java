@@ -19,8 +19,9 @@ import android.widget.Toast;
  * vk_notify_command events, which the automations listen to.
  *
  * VK does not let other apps send a message on the user's behalf without its own
- * API access, so the app copies the command and opens the group chat in the VK
- * app: paste and send.
+ * API access, so the app opens the group chat in the VK app and, if the user has
+ * enabled {@link VkInsertService}, types the command there; the user presses Send.
+ * Without it the command is on the clipboard to paste.
  */
 final class VkCommands {
 
@@ -37,7 +38,7 @@ final class VkCommands {
             {"start", "Список команд"},
     };
 
-    private static final String VK_PACKAGE = "com.vkontakte.android";
+    private static final String VK_PACKAGE = VkInsertService.VK_PACKAGE;
 
     private final Activity activity;
 
@@ -60,10 +61,28 @@ final class VkCommands {
             });
             return;
         }
-        String text = "/" + command;
+        final String text = "/" + command;
         ClipboardManager cm = (ClipboardManager) activity.getSystemService(Context.CLIPBOARD_SERVICE);
-        cm.setPrimaryClip(ClipData.newPlainText("Команда", text));
+        cm.setPrimaryClip(ClipData.newPlainText("Команда", text)); // fallback: paste by hand
 
+        final boolean auto = VkInsertService.isEnabled(activity);
+        if (!auto && !activity.getSharedPreferences("ha", Context.MODE_PRIVATE)
+                .getBoolean("vk_auto_declined", false)) {
+            offerAutoInsert(new Runnable() {
+                @Override
+                public void run() {
+                    openChat(text, false);
+                }
+            });
+            return;
+        }
+        openChat(text, auto);
+    }
+
+    private void openChat(String text, boolean auto) {
+        if (auto) {
+            VkInsertService.request(text);
+        }
         Uri chat = Uri.parse("https://vk.me/" + group());
         Intent open = new Intent(Intent.ACTION_VIEW, chat);
         open.setPackage(VK_PACKAGE);
@@ -77,8 +96,35 @@ final class VkCommands {
                 return;
             }
         }
-        Toast.makeText(activity, "Команда " + text + " скопирована — вставьте в чат и отправьте",
+        Toast.makeText(activity, auto
+                        ? "Команда " + text + " будет вписана в чат — нажмите «Отправить»"
+                        : "Команда " + text + " скопирована — вставьте в чат и отправьте",
                 Toast.LENGTH_LONG).show();
+    }
+
+    /** One-time offer to let the app type the command into VK itself. */
+    private void offerAutoInsert(final Runnable manual) {
+        new AlertDialog.Builder(activity)
+                .setTitle("Вписывать команду автоматически?")
+                .setMessage("Приложение может само вписать команду в поле сообщения в чате группы — "
+                        + "вам останется нажать «Отправить».\n\nДля этого включите «Умный дом: команды в ВК» "
+                        + "в Настройках → Специальные возможности (на Xiaomi: «Скачанные приложения»). "
+                        + "Разрешение работает только внутри ВКонтакте и сразу после нажатия кнопки команды.")
+                .setPositiveButton("Открыть настройки", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        activity.startActivity(new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS));
+                    }
+                })
+                .setNegativeButton("Вставлю сам", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        activity.getSharedPreferences("ha", Context.MODE_PRIVATE).edit()
+                                .putBoolean("vk_auto_declined", true).apply();
+                        manual.run();
+                    }
+                })
+                .show();
     }
 
     /** "https://vk.com/hotdom" / "club123" / "hotdom" -> "hotdom" or "club123". */
